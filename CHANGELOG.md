@@ -1,21 +1,28 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0 (unreleased)
 
-First release: the detector frozen from the *Baza martwych drzew* research.
+The product is a point per dead tree, and the crowns grown from it.
 
-- Three band modes (RGB+NIR, CIR, RGB), each with its own adaptel granularity,
-  feature set and random forest; the models ship as GitHub release assets and
-  are downloaded on first use.
-- Absolute probability threshold (default 0.5), merging of adjacent detections
-  into objects, tiled processing with an overlap so no object is cut or
-  written twice.
-- Optional stand mask from forest-management polygons (age >= 10 years,
-  -2 m buffer by default) and an optional object forest (RGBN mode).
-- GeoPackage output with adaptel and object probabilities, area, shape,
-  neighbouring-canopy descriptors, stand and nodata-edge flags; optional
-  centroid layer and per-pixel probability raster.
-- `geosnag detect` and `geosnag info` on the command line.
-- `geosnag adapt`: refit the forest of a mode with labelled windows of a new
-  scene (point layers of dead trees and of rejected objects), weighted; the
-  result is used with `geosnag detect --model`.
+- `detect` writes one point per dead tree (layer `dead_trees`): the
+  area-weighted centroid of the merged adaptels above the threshold, which
+  measured against the reference tops beats the highest-scoring and the
+  brightest adaptel (median 0.47 m off the top); the weaker of two points
+  closer than 3 m is dropped (F1 0.424 -> 0.435 on seven sites). Polygons are
+  no longer written.
+- `grow_crowns` / `geosnag grow`: the points grown into crown polygons with
+  pygeoadaptels' seeded region growing on CIELAB and the crown recipe
+  (weights 0.5, 2.5, 1.0; Delta-E 15; 20 px; holes filled).
+- Removed from the package: `adapt`, `score`, `extract` and their commands.
+  Scene adaptation is the research side's job; those scripts live with the
+  research now.
+- A failed model download is a readable error naming the cache folder;
+  `detect` takes a progress callback with cancel for GUI front ends.
+
+## 0.1.0
+
+First cut of the detector frozen from the *Baza martwych drzew* research:
+three band modes with granularity-matched adaptel thresholds, the 20/17
+feature set (bit-identical parity with the research cache), absolute
+probability threshold, tiled processing with an overlap, optional stand mask
+and object forest, GeoPackage output, `geosnag` CLI.

@@ -1,9 +1,8 @@
 """geosnag -- command line front end.
 
-    geosnag detect ortho.tif -o snags.gpkg [--mode rgbn|cir|rgb] [--bands red,green,blue,nir]
-                   [--threshold 0.5] [--min-area 0] [--stands stands.gpkg --stand-age 10 --stand-buffer -2]
-                   [--keep-outside] [--no-object-stage] [--object-threshold 0.4]
-                   [--prob-raster prob.tif] [--points] [--tile 2400] [--overlap 200] [--quiet]
+    geosnag detect ortho.tif -o trees.gpkg [--mode rgbn|cir|rgb] [--bands red,green,blue,nir]
+                   [--threshold 0.5] [--stands stands.gpkg] [--prob-raster p.tif] [--quiet]
+    geosnag grow   ortho.tif trees.gpkg -o crowns.gpkg [--mode ...] [--max-cost 15] [--max-radius 20]
     geosnag info
 
 Console output is plain ASCII on purpose: Windows consoles in code page
@@ -19,31 +18,28 @@ from .modes import MODES
 def _detect(a):
     from .detect import detect
     bands = tuple(b.strip() for b in a.bands.split(",")) if a.bands else None
-    n = detect(a.raster, a.output, mode=a.mode, bands=bands, threshold=a.threshold, min_area=a.min_area,
-               tile=a.tile, overlap=a.overlap, stands=a.stands, stand_layer=a.stand_layer,
-               stand_age=a.stand_age, stand_buffer=a.stand_buffer, keep_outside=a.keep_outside,
-               object_stage=not a.no_object_stage, object_threshold=a.object_threshold,
-               prob_raster=a.prob_raster, points=a.points, edge_px=a.edge_px, model=a.model, quiet=a.quiet)
+    n = detect(a.raster, a.output, mode=a.mode, bands=bands, threshold=a.threshold, suppress_m=a.suppress,
+               min_area=a.min_area, stands=a.stands, stand_layer=a.stand_layer, stand_age=a.stand_age,
+               stand_buffer=a.stand_buffer, keep_outside=a.keep_outside, object_stage=not a.no_object_stage,
+               object_threshold=a.object_threshold, prob_raster=a.prob_raster, edge_px=a.edge_px,
+               tile=a.tile, overlap=a.overlap, model=a.model, adaptel_threshold=a.adaptel_threshold, quiet=a.quiet)
     return 0 if n >= 0 else 1
 
 
-def _adapt(a):
-    from .adapt import adapt
-    if len(a.positives) != len(a.raster):
-        raise SystemExit("give one --positives file per raster, in the same order")
-    negs = a.negatives or []
-    if negs and len(negs) != len(a.raster):
-        raise SystemExit("give one --negatives file per raster (or none), in the same order")
-    windows = [(r, p, negs[i] if negs else None) for i, (r, p) in enumerate(zip(a.raster, a.positives))]
+def _grow(a):
+    from .grow import grow_crowns
     bands = tuple(b.strip() for b in a.bands.split(",")) if a.bands else None
-    adapt(windows, a.output, mode=a.mode, bands=bands, weight=a.weight, quiet=a.quiet)
+    weights = tuple(float(x) for x in a.band_weights.split(",")) if a.band_weights else None
+    grow_crowns(a.raster, a.points, a.output, mode=a.mode, bands=bands, labels_out=a.labels,
+                max_cost=a.max_cost, band_weights=weights, max_radius=a.max_radius,
+                fill_holes=not a.no_fill_holes, quiet=a.quiet)
     return 0
 
 
 def _info(a):
     from . import assets
     print(f"pygeosnag {__version__}")
-    print(f"assets: {assets.assets_dir()} (release {assets.RELEASE})")
+    print(f"models: {assets.assets_dir()} (release {assets.RELEASE})")
     for k, m in MODES.items():
         print(f"  mode {k:<5} bands {', '.join(m.roles):<22} adaptels t{m.threshold:g}  {m.description}")
     try:
@@ -61,39 +57,46 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="geosnag", description="Standing dead tree detection on aerial orthophotos.")
     p.add_argument("--version", action="version", version=f"geosnag {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
-    d = sub.add_parser("detect", help="detect dead crowns on a raster")
+
+    d = sub.add_parser("detect", help="one point per dead tree")
     d.add_argument("raster")
-    d.add_argument("-o", "--output", required=True, help="output GeoPackage")
+    d.add_argument("-o", "--output", required=True, help="output GeoPackage (layer dead_trees)")
     d.add_argument("--mode", choices=sorted(MODES), default=None, help="band mode (default: rgbn for 4 bands, rgb for 3)")
     d.add_argument("--bands", default=None, help="role of each raster band in order, e.g. nir,red,green,blue")
     d.add_argument("--threshold", type=float, default=0.5, help="probability cut per adaptel (default 0.5)")
-    d.add_argument("--min-area", type=float, default=0.0, help="minimum object area, m2 (default 0)")
-    d.add_argument("--stands", default=None, help="stand polygons (GeoPackage, Shapefile, ...) for the forest mask")
+    d.add_argument("--stands", default=None, help="stand polygons for the forest mask")
     d.add_argument("--stand-layer", default=None)
-    d.add_argument("--stand-age", type=float, default=10, help="minimum stand age in the mask (default 10)")
-    d.add_argument("--stand-buffer", type=float, default=-2.0, help="inward buffer of the mask, m (default -2)")
-    d.add_argument("--keep-outside", action="store_true", help="keep objects outside the mask, flagged")
-    d.add_argument("--no-object-stage", action="store_true", help="skip the object forest")
-    d.add_argument("--object-threshold", type=float, default=None, help="drop objects below this object probability")
+    d.add_argument("--stand-age", type=float, default=10)
+    d.add_argument("--stand-buffer", type=float, default=-2.0)
+    d.add_argument("--keep-outside", action="store_true")
     d.add_argument("--prob-raster", default=None, help="also write the per-pixel probability GeoTIFF")
-    d.add_argument("--points", action="store_true", help="also write a centroid layer")
+    d.add_argument("--suppress", type=float, default=3.0, help="drop the weaker of two points closer than this, m")
+    d.add_argument("--min-area", type=float, default=0.0)
+    d.add_argument("--no-object-stage", action="store_true")
+    d.add_argument("--object-threshold", type=float, default=None)
     d.add_argument("--edge-px", type=int, default=8)
     d.add_argument("--tile", type=int, default=2400)
     d.add_argument("--overlap", type=int, default=200)
-    d.add_argument("--model", default=None, help="adapted segment forest (.joblib from `geosnag adapt`)")
+    d.add_argument("--model", default=None, help="a segment forest .joblib instead of the shipped one")
+    d.add_argument("--adaptel-threshold", type=float, default=None)
     d.add_argument("--quiet", action="store_true")
     d.set_defaults(func=_detect)
-    ad = sub.add_parser("adapt", help="refit the forest with labelled windows of a new scene")
-    ad.add_argument("raster", nargs="+", help="one or more rasters (windows of a few thousand px)")
-    ad.add_argument("--positives", nargs="+", required=True, help="point file(s) of dead trees, one per raster")
-    ad.add_argument("--negatives", nargs="*", default=None, help="point file(s) of rejected objects, one per raster")
-    ad.add_argument("-o", "--output", required=True, help="output .joblib of the adapted forest")
-    ad.add_argument("--mode", choices=sorted(MODES), default=None)
-    ad.add_argument("--bands", default=None)
-    ad.add_argument("--weight", type=float, default=1.0, help="sample weight of the new rows (default 1)")
-    ad.add_argument("--quiet", action="store_true")
-    ad.set_defaults(func=_adapt)
-    i = sub.add_parser("info", help="modes, asset location and manifest")
+
+    g = sub.add_parser("grow", help="grow dead-tree points into crowns (pygeoadaptels grow_seeds, crown recipe)")
+    g.add_argument("raster")
+    g.add_argument("points", help="point layer, e.g. the dead_trees layer of detect")
+    g.add_argument("-o", "--output", required=True, help="output crown polygons (.gpkg)")
+    g.add_argument("--mode", choices=sorted(MODES), default=None)
+    g.add_argument("--bands", default=None)
+    g.add_argument("--labels", default=None, help="also write the label raster")
+    g.add_argument("--max-cost", type=float, default=None, help="Delta-E tolerance (default 15)")
+    g.add_argument("--band-weights", default=None, help="L,a,b weights (default 0.5,2.5,1.0)")
+    g.add_argument("--max-radius", type=float, default=None, help="pixels from the seed (default 20)")
+    g.add_argument("--no-fill-holes", action="store_true")
+    g.add_argument("--quiet", action="store_true")
+    g.set_defaults(func=_grow)
+
+    i = sub.add_parser("info", help="modes, model location and manifest")
     i.set_defaults(func=_info)
     a = p.parse_args(argv)
     return a.func(a)

@@ -4,9 +4,9 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**Standing dead tree (snag) detection on aerial orthophotos, without seeds, tree tops or a canopy height model.**
+**Standing dead trees on aerial orthophotos, as points — and the crowns grown from them.**
 
-A raster goes in, a GeoPackage of dead-crown polygons with a confidence score comes out. The detector is a frozen pipeline: adaptel micro-segmentation ([pygeoadaptels](https://github.com/igorpawelec/pygeoadaptels)), twenty spectral and contextual features per adaptel ([pygeopalette](https://github.com/igorpawelec/pygeopalette) for the colour transform), a random forest trained on seven Polish forest sites, an absolute probability threshold, merging into objects, and an optional stand mask and object forest.
+A raster goes in, one point per dead tree comes out, with a confidence. No seeds, no tree tops, no canopy height model. The points are seeds for the second step: `grow_crowns` grows each into a crown polygon with the seeded region growing of [pygeoadaptels](https://github.com/igorpawelec/pygeoadaptels) and a crown recipe.
 
 ## Install
 
@@ -20,54 +20,45 @@ The models are release assets, not part of the wheel. They are downloaded on fir
 ## Use
 
 ```bash
-geosnag detect ortho.tif -o snags.gpkg                          # 4 bands: R, G, B, NIR
-geosnag detect cir.tif -o snags.gpkg --mode cir                 # 3 bands: NIR, R, G
-geosnag detect ortho.tif -o snags.gpkg --bands nir,red,green,blue
-geosnag detect ortho.tif -o snags.gpkg --stands stands.gpkg --stand-age 10 --stand-buffer -2
-geosnag detect ortho.tif -o snags.gpkg --threshold 0.4 --prob-raster prob.tif --points
+geosnag detect ortho.tif -o trees.gpkg                       # 4 bands: R, G, B, NIR
+geosnag detect cir.tif -o trees.gpkg --mode cir              # 3 bands: NIR, R, G
+geosnag detect ortho.tif -o trees.gpkg --bands nir,red,green,blue
+geosnag detect ortho.tif -o trees.gpkg --stands stands.gpkg  # keep points inside stands >= 10 years
+geosnag grow ortho.tif trees.gpkg -o crowns.gpkg             # points -> crown polygons
 geosnag info
 ```
 
 ```python
-from pygeosnag import detect
-detect("ortho.tif", "snags.gpkg", stands="stands.gpkg")
+from pygeosnag import detect, grow_crowns
+detect("ortho.tif", "trees.gpkg", stands="stands.gpkg")
+grow_crowns("ortho.tif", "trees.gpkg", "crowns.gpkg")
 ```
 
-### A new scene that the models get wrong
-
-A forest trained on pine sites misses what it never saw: on a mountain spruce plot the bleached white snags scored 0.23 and stayed below the threshold. Label a few of them (a point layer of dead trees; optionally a point layer of objects you rejected) and refit:
-
-```bash
-geosnag adapt plot.tif --positives dead.gpkg --negatives notdead.gpkg --mode rgb --weight 5 -o my_forest.joblib
-geosnag detect plot.tif -o snags.gpkg --mode rgb --model my_forest.joblib
-```
-
-The labelled rows join the pooled training table of the mode (downloaded with the models) with the given weight and the forest is refitted with the shipped settings; several rasters can be given at once, one point file each. On the spruce plot one window of 53 labelled snags took the detector from 6 to 49 of them.
-
-The output layer `snags` carries, per object: `prob_max`, `prob_mean`, `prob_min` (adaptel probabilities), `area_m2`, `n_segments`, `elongation`, `ring_ndvi` and `ring_L` (the neighbouring canopy), `p_object` (the object forest, RGBN mode), `in_stands`, `edge_px` (distance to nodata), `mode` and `model`.
+The point layer `dead_trees` carries, per tree: `p` (the highest adaptel probability of the object), `p_mean`, `p_object` (the object forest, RGB+NIR only), `area_m2` and `n_adaptels` of the detected object, `in_stands`, `edge_px` (distance to nodata), `mode` and `model`.
 
 ## What to expect
 
-Measured on seven sites (13 255 reference trees, 0.25 m orthophotos, leaf-on) with the site under test never seen in training:
+Measured on seven Polish forest sites (13 255 reference tree tops, 0.25 m orthophotos, leaf-on), a point counted as a hit within 1.5 m of a top, with the site under test never seen in training:
 
-| mode | bands | recall | precision against the reference | estimated true precision |
-|---|---|---|---|---|
-| rgbn | R, G, B, NIR | ~65% | 31% | 55-64%, with a stand mask 64-75% |
-| cir | NIR, R, G | lower by ~15% | | |
-| rgb | R, G, B | lower by ~15% | | |
+| mode | bands | recall | precision against the reference |
+|---|---|---|---|
+| rgbn | R, G, B, NIR | 63% | 33% |
+| cir | NIR, R, G | lower by ~15% | |
+| rgb | R, G, B | lower by ~15% | |
 
-The reference marks one top per tree and misses many dead trees; a field review of 60 objects the detector found without a reference top classified 42% as trees (25% clearly dead), 30% as roads, 20% as bare soil. Precision against the reference is therefore a floor. The stand mask (`--stands`, polygons with a stand age field; stands of at least 10 years, shrunk by 2 m) removed a quarter of all objects and, on the reviewed sample, only roads and fields.
+The reference marks one top per tree and misses many dead trees: a field review of 60 points the detector placed without a reference top classified 42% as trees (25% clearly dead), 30% as roads, 20% as bare soil. Precision against the reference is therefore a floor; against the review it is 55–65%, and 64–75% with a stand mask. The points sit a median 0.47 m from the reference top.
 
-Three things the detector does not do: it does not separate dead from dying trees (the labels do not), it does not know species, and it has not seen leaf-off imagery. A scene from a different acquisition can transfer badly; a few labelled windows from that scene, added to the training table, recover most of the loss (see the adaptation notes in the research report).
+Three things the detector does not do: it does not separate dead from dying trees (the labels do not), it does not know species, and it has not seen leaf-off imagery. A scene from a different camera, species or decay stage can transfer badly: the ranking of the points is usually still right and the scale is not, so a lower threshold is the first thing to try there.
 
 ## How it works
 
 1. **Segmentation.** Adaptels at threshold 60 on the four bands, or at a threshold matched to the same granularity on three (RGB t40, CIR t50). Nodata is masked; adaptels smaller than 4 px are not scored.
 2. **Features.** For NDVI, NDGR, NDBR, CIELCh lightness and chroma: mean, standard deviation and contrast to a 25 m box; hue as circular mean and variance; area; elongation. Without NIR there is no NDVI, without blue no NDBR; in the CIR mode the (NIR, R, G) triple goes through the RGB-to-CIELCh transform as if it were RGB.
 3. **Forest.** One per mode, 200 trees, balanced subsampling, trained on ~2 million adaptels from seven sites.
-4. **Threshold.** Absolute, p >= 0.5 by default; the useful range is 0.4-0.6. A per-scene quantile was tried and rejected: a scene without dead trees also has a top 1.5%.
-5. **Objects.** Adjacent adaptels above the threshold are merged. Tiles overlap by 200 px and an object is written from the tile whose core holds its centroid.
-6. **Optional stages.** Stand mask; object forest on the merged object's shape, scores and neighbouring canopy (`p_object`, RGBN only).
+4. **Threshold.** Absolute, p >= 0.5 by default; the useful range is 0.4–0.6. A per-scene quantile was tried and rejected: a scene without dead trees also has a top 1.5%.
+5. **Points.** Adjacent adaptels above the threshold are merged; the point is the object's area-weighted centroid (it beats the highest-scoring and the brightest adaptel); the weaker of two points closer than 3 m is dropped. Tiles overlap by 200 px and a point is written from the tile whose core holds it.
+6. **Optional.** A stand mask (polygons with a stand age field; stands of at least 10 years, shrunk by 2 m); the object forest (`p_object`, RGB+NIR).
+7. **Crowns.** `grow_crowns` converts the mode's RGB-like trio to CIELAB and runs pygeoadaptels' `grow_seeds` with weights (0.5, 2.5, 1.0), a Delta-E tolerance of 15, a radius of 20 px and hole filling — the recipe worked out on a spruce plot with bleached snags.
 
 Input at another pixel size is resampled to 0.25 m. 8-bit input is what the models saw; 16-bit values are scaled so their 99.9th percentile lands at 255, with a warning.
 
