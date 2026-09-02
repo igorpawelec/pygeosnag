@@ -45,7 +45,19 @@ def _fetch(name, quiet=False):
         raise FileNotFoundError(f"{name} not found in PYGEOSNAG_ASSETS={d}")
     if not quiet:
         print(f"pygeosnag: downloading {name} ...", flush=True)
-    urllib.request.urlretrieve(URL.format(name=name), path + ".part")
+    url = URL.format(name=name)
+    try:
+        urllib.request.urlretrieve(url, path + ".part")
+    except Exception as e:
+        try:
+            os.remove(path + ".part")
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"pygeosnag: could not download {name} from {url} ({e}). The models are release "
+            f"assets of the pygeosnag repository; if the release is not published yet or the "
+            f"machine is offline, set PYGEOSNAG_ASSETS to a folder that holds manifest.json and "
+            f"the model files (in QGIS: the 'Local models folder' parameter).") from e
     os.replace(path + ".part", path)
     return path
 
