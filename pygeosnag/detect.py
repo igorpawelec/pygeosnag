@@ -105,7 +105,7 @@ def _open(raster_path, quiet):
 def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area=0.0,
            tile=2400, overlap=200, stands=None, stand_layer=None, stand_age=10, stand_buffer=-2.0,
            keep_outside=False, object_stage=True, object_threshold=None, prob_raster=None,
-           points=False, edge_px=8, model=None, quiet=False):
+           points=False, edge_px=8, model=None, progress=None, quiet=False):
     """Detect dead crowns on a raster and write them to a GeoPackage.
 
     Parameters
@@ -116,6 +116,10 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
     model : str, optional
         Path of an adapted segment forest (adapt.adapt) to use instead of
         the shipped one; it must have been fitted for the same mode.
+    progress : callable, optional
+        Called as progress(fraction, message) after every tile (and once
+        at the start); return False to cancel the run. Meant for GUI
+        front ends; the messages are the ones printed when not quiet.
     threshold : float
         Absolute probability cut per adaptel; 0.5 is the calibrated
         default, 0.4-0.6 the useful range.
@@ -177,9 +181,15 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
             prob_dst = rasterio.open(prob_raster, "w", **prof)
         H, W = ds.height, ds.width
         tiles = list(_tiles(H, W, tile, overlap))
-        if not quiet:
-            print(f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, "
-                  f"{len(tiles)} tiles, threshold {threshold}", flush=True)
+
+        def report(frac, msg):
+            if not quiet:
+                print(msg, flush=True)
+            if progress is not None and progress(frac, msg) is False:
+                raise RuntimeError("pygeosnag: cancelled")
+
+        report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, "
+                    f"{len(tiles)} tiles, threshold {threshold}")
         n_obj_total = 0
         for k, (r0, c0, h, w, cr0, cr1, cc0, cc1) in enumerate(tiles):
             from rasterio.windows import Window
@@ -191,6 +201,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
             else:
                 valid = (arr != nodata).all(axis=0) & np.isfinite(arr).all(axis=0)
             if valid.sum() < MIN_VALID_PX:
+                report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({r0}_{c0}): nodata, skipped")
                 continue
             tf = ds.window_transform(win)
             band_roles = {r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()}
@@ -203,6 +214,8 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
                 prob_dst.write(pr[sl], 1, window=Window(cc0, cr0, cc1 - cc0, cr1 - cr0))
             n = res["n_obj"]
             if n == 0:
+                report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({r0}_{c0}): "
+                                             f"{len(res['cnt']):,} adaptels, 0 objects, {time.time() - t0:.0f}s")
                 continue
             F, cent, p2 = res["F"], res["centroid"], res["p2"]
             # objects whose centroid lies in the tile core, in pixel space of the tile
@@ -221,6 +234,8 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
                 keep &= p2 >= object_threshold
             ids = np.nonzero(keep)[0]
             if not len(ids):
+                report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({r0}_{c0}): "
+                                             f"{len(res['cnt']):,} adaptels, {n} objects, 0 kept, {time.time() - t0:.0f}s")
                 continue
             dist = nodata_distance(valid)
             geoms = polygons_of(res["obj_raster"], tf, ids + 1)
@@ -241,16 +256,14 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
             if psink is not None and pts:
                 psink.writerecords(pts)
             n_obj_total += len(recs)
-            if not quiet:
-                print(f"  tile {k + 1}/{len(tiles)} ({tile_name}): {len(res['cnt']):,} adaptels, "
-                      f"{n} objects, {len(recs)} written, {time.time() - t0:.0f}s", flush=True)
+            report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({tile_name}): {len(res['cnt']):,} adaptels, "
+                                         f"{n} objects, {len(recs)} written, {time.time() - t0:.0f}s")
         sink.close()
         if psink is not None:
             psink.close()
         if prob_dst is not None:
             prob_dst.close()
-        if not quiet:
-            print(f"pygeosnag: {n_obj_total} objects -> {out_path} [{time.time() - t_all:.0f}s]", flush=True)
+        report(1.0, f"pygeosnag: {n_obj_total} objects -> {out_path} [{time.time() - t_all:.0f}s]")
         return n_obj_total
     finally:
         if ds is not src:

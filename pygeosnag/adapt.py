@@ -30,7 +30,13 @@ NEG_K = 10                       # background subsample, as in the training tabl
 
 
 def _read_points(path, layer=None):
+    """Point coordinates of a vector file; accepts QGIS's ``path|layername=x``."""
     import fiona
+    if "|" in str(path):
+        path, _, rest = str(path).partition("|")
+        for part in rest.split("|"):
+            if part.startswith("layername="):
+                layer = part[len("layername="):]
     with fiona.open(path, layer=layer) as src:
         return np.array([f["geometry"]["coordinates"][:2] for f in src], float)
 
