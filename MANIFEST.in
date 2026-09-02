@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include CITATION.cff
+include CHANGELOG.md
+include CONTRIBUTING.md
+include pyproject.toml

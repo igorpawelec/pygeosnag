@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=77.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygeosnag"
+version = "0.1.0"
+description = "Standing dead tree (snag) detection on aerial orthophotos from adaptel micro-segmentation"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [
+    {name = "Igor Pawelec"},
+]
+keywords = ["dead trees", "snags", "forest", "orthophoto", "superpixels", "adaptels", "remote sensing", "GIS"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+# Same policy as pygeoadaptels: only what `import pygeosnag` needs. The
+# GDAL-linked packages (rasterio, fiona) and shapely are imported lazily
+# inside the functions that need them and are best installed with conda:
+#   conda install -c conda-forge numpy numba scipy scikit-learn joblib rasterio fiona shapely
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "scikit-learn>=1.3",
+    "joblib>=1.2",
+    "pygeoadaptels>=0.10.3",
+    "pygeopalette>=0.7.1",
+]
+
+[project.optional-dependencies]
+# Everything the detector needs end to end (raster I/O, vector output, stand masks).
+all = ["rasterio>=1.3", "fiona>=1.9", "shapely>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/igorpawelec/pygeosnag"
+Repository = "https://github.com/igorpawelec/pygeosnag"
+Issues = "https://github.com/igorpawelec/pygeosnag/issues"
+
+[project.scripts]
+geosnag = "pygeosnag.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pygeosnag*"]
+exclude = ["tests*", "examples*"]

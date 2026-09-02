@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: "pygeosnag — standing dead tree detection on aerial orthophotos"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Pawelec
+    given-names: Igor
+    affiliation: "Kraków, Poland"
+repository-code: "https://github.com/igorpawelec/pygeosnag"
+license: GPL-3.0-or-later
+version: "0.1.0"
+date-released: "2026-09-02"
+references:
+  - type: software
+    title: "pygeoadaptels — Scale-Adaptive Superpixels for geospatial data"
+    authors:
+      - family-names: Pawelec
+        given-names: Igor
+    repository-code: "https://github.com/igorpawelec/pygeoadaptels"
+  - type: article
+    title: "Scale-Adaptive Superpixels"
+    authors:
+      - family-names: Achanta
+        given-names: Radhakrishna
+      - family-names: Marquez-Neila
+        given-names: Pablo
+      - family-names: Fua
+        given-names: Pascal
+      - family-names: Süsstrunk
+        given-names: Sabine
+    journal: "Color and Imaging Conference (CIC26)"
+    year: 2018
