@@ -105,7 +105,7 @@ def _open(raster_path, quiet):
 def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area=0.0,
            tile=2400, overlap=200, stands=None, stand_layer=None, stand_age=10, stand_buffer=-2.0,
            keep_outside=False, object_stage=True, object_threshold=None, prob_raster=None,
-           points=False, edge_px=8, quiet=False):
+           points=False, edge_px=8, model=None, quiet=False):
     """Detect dead crowns on a raster and write them to a GeoPackage.
 
     Parameters
@@ -113,6 +113,9 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
     raster_path, out_path : str
         Input orthophoto (any GDAL format) and output GeoPackage.
     mode, bands : see modes.resolve_mode.
+    model : str, optional
+        Path of an adapted segment forest (adapt.adapt) to use instead of
+        the shipped one; it must have been fitted for the same mode.
     threshold : float
         Absolute probability cut per adaptel; 0.5 is the calibrated
         default, 0.4-0.6 the useful range.
@@ -143,8 +146,15 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, min_area
     src, ds = _open(raster_path, quiet)
     try:
         m, index = resolve_mode(ds.count, mode, bands)
-        forest = assets.load_forest(m.name, quiet)
-        model_id = f"{assets.RELEASE}/{m.name}"
+        if model:
+            import joblib
+            forest = joblib.load(model)
+            model_id = os.path.basename(model)
+            if not quiet:
+                print(f"pygeosnag: adapted forest {model_id}", flush=True)
+        else:
+            forest = assets.load_forest(m.name, quiet)
+            model_id = f"{assets.RELEASE}/{m.name}"
         object_forest = None
         if object_stage:
             if m.name == "rgbn":

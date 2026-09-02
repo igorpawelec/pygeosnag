@@ -16,3 +16,6 @@ First release: the detector frozen from the *Baza martwych drzew* research.
   neighbouring-canopy descriptors, stand and nodata-edge flags; optional
   centroid layer and per-pixel probability raster.
 - `geosnag detect` and `geosnag info` on the command line.
+- `geosnag adapt`: refit the forest of a mode with labelled windows of a new
+  scene (point layers of dead trees and of rejected objects), weighted; the
+  result is used with `geosnag detect --model`.

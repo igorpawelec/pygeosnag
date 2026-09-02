@@ -43,6 +43,7 @@ from .features import FEATURE_NAMES, feature_names  # noqa: E402
 _LAZY = {
     "detect": ".detect",
     "detect_array": ".detect",
+    "adapt": ".adapt",
     "segment_features": ".features",
     "load_forest": ".assets",
 }
@@ -59,4 +60,4 @@ def __getattr__(name):
 
 
 __all__ = ["MODES", "resolve_mode", "FEATURE_NAMES", "feature_names",
-           "detect", "detect_array", "segment_features", "load_forest", "__version__"]
+           "detect", "detect_array", "adapt", "segment_features", "load_forest", "__version__"]

@@ -33,6 +33,17 @@ from pygeosnag import detect
 detect("ortho.tif", "snags.gpkg", stands="stands.gpkg")
 ```
 
+### A new scene that the models get wrong
+
+A forest trained on pine sites misses what it never saw: on a mountain spruce plot the bleached white snags scored 0.23 and stayed below the threshold. Label a few of them (a point layer of dead trees; optionally a point layer of objects you rejected) and refit:
+
+```bash
+geosnag adapt plot.tif --positives dead.gpkg --negatives notdead.gpkg --mode rgb --weight 5 -o my_forest.joblib
+geosnag detect plot.tif -o snags.gpkg --mode rgb --model my_forest.joblib
+```
+
+The labelled rows join the pooled training table of the mode (downloaded with the models) with the given weight and the forest is refitted with the shipped settings; several rasters can be given at once, one point file each. On the spruce plot one window of 53 labelled snags took the detector from 6 to 49 of them.
+
 The output layer `snags` carries, per object: `prob_max`, `prob_mean`, `prob_min` (adaptel probabilities), `area_m2`, `n_segments`, `elongation`, `ring_ndvi` and `ring_L` (the neighbouring canopy), `p_object` (the object forest, RGBN mode), `in_stands`, `edge_px` (distance to nodata), `mode` and `model`.
 
 ## What to expect

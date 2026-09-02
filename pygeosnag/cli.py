@@ -23,8 +23,21 @@ def _detect(a):
                tile=a.tile, overlap=a.overlap, stands=a.stands, stand_layer=a.stand_layer,
                stand_age=a.stand_age, stand_buffer=a.stand_buffer, keep_outside=a.keep_outside,
                object_stage=not a.no_object_stage, object_threshold=a.object_threshold,
-               prob_raster=a.prob_raster, points=a.points, edge_px=a.edge_px, quiet=a.quiet)
+               prob_raster=a.prob_raster, points=a.points, edge_px=a.edge_px, model=a.model, quiet=a.quiet)
     return 0 if n >= 0 else 1
+
+
+def _adapt(a):
+    from .adapt import adapt
+    if len(a.positives) != len(a.raster):
+        raise SystemExit("give one --positives file per raster, in the same order")
+    negs = a.negatives or []
+    if negs and len(negs) != len(a.raster):
+        raise SystemExit("give one --negatives file per raster (or none), in the same order")
+    windows = [(r, p, negs[i] if negs else None) for i, (r, p) in enumerate(zip(a.raster, a.positives))]
+    bands = tuple(b.strip() for b in a.bands.split(",")) if a.bands else None
+    adapt(windows, a.output, mode=a.mode, bands=bands, weight=a.weight, quiet=a.quiet)
+    return 0
 
 
 def _info(a):
@@ -67,8 +80,19 @@ def main(argv=None):
     d.add_argument("--edge-px", type=int, default=8)
     d.add_argument("--tile", type=int, default=2400)
     d.add_argument("--overlap", type=int, default=200)
+    d.add_argument("--model", default=None, help="adapted segment forest (.joblib from `geosnag adapt`)")
     d.add_argument("--quiet", action="store_true")
     d.set_defaults(func=_detect)
+    ad = sub.add_parser("adapt", help="refit the forest with labelled windows of a new scene")
+    ad.add_argument("raster", nargs="+", help="one or more rasters (windows of a few thousand px)")
+    ad.add_argument("--positives", nargs="+", required=True, help="point file(s) of dead trees, one per raster")
+    ad.add_argument("--negatives", nargs="*", default=None, help="point file(s) of rejected objects, one per raster")
+    ad.add_argument("-o", "--output", required=True, help="output .joblib of the adapted forest")
+    ad.add_argument("--mode", choices=sorted(MODES), default=None)
+    ad.add_argument("--bands", default=None)
+    ad.add_argument("--weight", type=float, default=1.0, help="sample weight of the new rows (default 1)")
+    ad.add_argument("--quiet", action="store_true")
+    ad.set_defaults(func=_adapt)
     i = sub.add_parser("info", help="modes, asset location and manifest")
     i.set_defaults(func=_info)
     a = p.parse_args(argv)
