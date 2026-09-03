@@ -109,9 +109,38 @@ def _open(raster_path, quiet):
     return src, src
 
 
+def _height_sampler(chm, dtm, dsm, crs):
+    """A function xy (n, 2) in the orthophoto's CRS -> canopy height in metres,
+    NaN where the height rasters have no data. From a CHM, or from a DSM and
+    a DTM (their difference); rasters in another CRS are sampled after
+    transforming the points. None when no height raster was given."""
+    if not chm and not (dtm and dsm):
+        return None, []
+    import rasterio
+    from rasterio.warp import transform as _transform
+    paths = [chm] if chm else [dsm, dtm]
+    srcs = [rasterio.open(p) for p in paths]
+
+    def sample(xy):
+        if len(xy) == 0:
+            return np.zeros(0)
+        vals = []
+        for src in srcs:
+            xs, ys = xy[:, 0], xy[:, 1]
+            if crs and src.crs and src.crs != crs:
+                xs, ys = _transform(crs, src.crs, list(xs), list(ys))
+            v = np.array([s[0] for s in src.sample(zip(xs, ys))], float)
+            if src.nodata is not None:
+                v[v == src.nodata] = np.nan
+            vals.append(v)
+        return vals[0] if len(vals) == 1 else vals[0] - vals[1]
+    return sample, srcs
+
+
 def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress_m=SUPPRESS_M,
            min_area=0.0, stands=None, stand_layer=None, stand_age=10, stand_buffer=-2.0,
-           keep_outside=False, object_stage=True, object_threshold=None, prob_raster=None,
+           keep_outside=False, chm=None, dtm=None, dsm=None, min_height=5.0, keep_low=False,
+           object_stage=True, object_threshold=None, prob_raster=None,
            edge_px=8, tile=2400, overlap=200, model=None, adaptel_threshold=None,
            progress=None, quiet=False):
     """Detect dead trees on a raster and write one point per tree.
@@ -121,7 +150,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
     raster_path, out_path : str
         Input orthophoto (any GDAL format) and output GeoPackage (layer
         ``dead_trees``: p, p_mean, p_object, area_m2, n_adaptels,
-        in_stands, edge_px, tile, mode, model).
+        in_stands, height_m, edge_px, tile, mode, model).
     mode, bands : see modes.resolve_mode.
     threshold : float
         Absolute probability cut per adaptel; 0.5 is calibrated, 0.4-0.6
@@ -133,6 +162,13 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
     stands, stand_layer, stand_age, stand_buffer, keep_outside : the
         optional stand mask (mask.load_stands); outside points are dropped
         unless keep_outside, then flagged in_stands = 0.
+    chm, dtm, dsm, min_height, keep_low : the optional height gate -- a
+        canopy height model, or a surface and a terrain model whose
+        difference is one. A point whose height is below min_height (5 m)
+        is dropped unless keep_low; the height is written as height_m
+        either way (None where the rasters have no data, never dropped).
+        Roads, fields and bare ground are what this removes; the LP method
+        of Onoszko et al. uses the same gate at 10 m.
     object_stage, object_threshold : score the object with the object
         forest (rgbn only) into p_object; drop below object_threshold if set.
     prob_raster : str, optional
@@ -164,6 +200,9 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
         object_forest = assets.load_forest("objects", quiet) if (object_stage and m.name == "rgbn") else None
         mask_geom = load_stands(stands, stand_layer, min_age=stand_age, buffer_m=stand_buffer,
                                 quiet=quiet) if stands else None
+        height_at, height_srcs = _height_sampler(chm, dtm, dsm, ds.crs)
+        if height_at is not None and not quiet:
+            print(f"pygeosnag: height gate {min_height:g} m from {os.path.basename(chm) if chm else 'DSM - DTM'}", flush=True)
         nodata = ds.nodata if ds.nodata is not None else 0
         crs_wkt = ds.crs.to_wkt() if ds.crs else ""
         if os.path.exists(out_path):
@@ -225,6 +264,14 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
                 in_st = inside(mask_geom, cent)
                 if not keep_outside:
                     keep &= in_st
+            heights = None
+            if height_at is not None:
+                heights = np.full(len(cent), np.nan)
+                sel = np.nonzero(keep)[0]
+                if len(sel):
+                    heights[sel] = height_at(cent[sel])
+                if not keep_low:
+                    keep &= ~(heights < min_height)       # NaN (no data) is never dropped
             # duplicate suppression among the survivors, by object p_max
             idx = np.nonzero(keep)[0]
             if len(idx) > 1:
@@ -241,8 +288,9 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
                     rr = int(np.clip(round(prow[i]), 0, h - 1))
                     cc = int(np.clip(round(pcol[i]), 0, w - 1))
                     edge = dist[rr, cc]
+                hgt = None if heights is None or not np.isfinite(heights[i]) else float(heights[i])
                 recs.append(point_record(cent[i], n_total + len(recs) + 1, F[i], None if p2 is None else p2[i],
-                                         None if in_st is None else in_st[i], edge, tag, m.name, model_id))
+                                         None if in_st is None else in_st[i], edge, tag, m.name, model_id, hgt))
             sink.write(recs)
             n_total += len(recs)
             report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({tag}): {len(res['cnt']):,} adaptels, "
@@ -253,6 +301,11 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
         report(1.0, f"pygeosnag: {n_total} dead trees -> {out_path} [{time.time() - t_all:.0f}s]")
         return n_total
     finally:
+        for s in locals().get("height_srcs", []) or []:
+            try:
+                s.close()
+            except Exception:
+                pass
         if ds is not src:
             ds.close()
         src.close()

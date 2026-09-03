@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+- Height gate: `detect(chm=...)` or `detect(dsm=..., dtm=...)` drops points
+  whose canopy height is below `min_height` (5 m) -- bare ground, roads and
+  stumps that share the colour of a dead crown -- and writes the height as
+  `height_m`; `keep_low` keeps them flagged. The gate the Lasy Państwowe
+  method (Onoszko) applies at 10 m with a normalised surface model. On the
+  command line: `--chm`, `--dsm`/`--dtm`, `--min-height`, `--keep-low`.
+
 ## 0.2.0 — 2026-09-02
 
 The product is a point per dead tree, and the crowns grown from it.
