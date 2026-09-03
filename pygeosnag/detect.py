@@ -109,11 +109,20 @@ def _open(raster_path, quiet):
     return src, src
 
 
-def _height_sampler(chm, dtm, dsm, crs):
-    """A function xy (n, 2) in the orthophoto's CRS -> canopy height in metres,
-    NaN where the height rasters have no data. From a CHM, or from a DSM and
-    a DTM (their difference); rasters in another CRS are sampled after
-    transforming the points. None when no height raster was given."""
+def _height_sampler(chm, dtm, dsm, crs, radius_m=3.0):
+    """A function xy (n, 2) in the orthophoto's CRS -> canopy height in metres:
+    the *maximum* within `radius_m` of the point, NaN where the height
+    rasters have no data there. From a CHM, or from a DSM and a DTM (their
+    difference); rasters in another CRS are sampled after transforming the
+    points. None when no height raster was given.
+
+    The maximum over a neighbourhood, not the value under the point, on
+    purpose: an orthophoto is not a true orthophoto and the ALS is not from
+    the same day, so a crown in the image and the same crown in the height
+    model sit a metre or three apart. The gate only has to answer whether
+    anything tall stands near the point -- it separates ground, roads and
+    shadow from standing trees and is never evidence about the crown.
+    """
     if not chm and not (dtm and dsm):
         return None, []
     import rasterio
@@ -121,26 +130,51 @@ def _height_sampler(chm, dtm, dsm, crs):
     paths = [chm] if chm else [dsm, dtm]
     srcs = [rasterio.open(p) for p in paths]
 
+    def grid(src, xy):
+        xs, ys = xy[:, 0], xy[:, 1]
+        if crs and src.crs and src.crs != crs:
+            xs, ys = _transform(crs, src.crs, list(xs), list(ys))
+        rows, cols = src.index(xs, ys)
+        return np.asarray(rows), np.asarray(cols)
+
+    def read_max(src, rows, cols, r_px):
+        out = np.full(len(rows), np.nan)
+        for k, (r, c) in enumerate(zip(rows, cols)):
+            r0, r1 = max(r - r_px, 0), min(r + r_px + 1, src.height)
+            c0, c1 = max(c - r_px, 0), min(c + r_px + 1, src.width)
+            if r1 <= r0 or c1 <= c0:
+                continue
+            from rasterio.windows import Window
+            a = src.read(1, window=Window(c0, r0, c1 - c0, r1 - r0)).astype(float)
+            if src.nodata is not None:
+                a[a == src.nodata] = np.nan
+            if np.isfinite(a).any():
+                out[k] = np.nanmax(a)
+        return out
+
     def sample(xy):
         if len(xy) == 0:
             return np.zeros(0)
-        vals = []
-        for src in srcs:
-            xs, ys = xy[:, 0], xy[:, 1]
-            if crs and src.crs and src.crs != crs:
-                xs, ys = _transform(crs, src.crs, list(xs), list(ys))
-            v = np.array([s[0] for s in src.sample(zip(xs, ys))], float)
-            if src.nodata is not None:
-                v[v == src.nodata] = np.nan
-            vals.append(v)
-        return vals[0] if len(vals) == 1 else vals[0] - vals[1]
+        if len(srcs) == 1:
+            src = srcs[0]
+            r_px = int(round(radius_m / abs(src.res[0])))
+            rows, cols = grid(src, xy)
+            return read_max(src, rows, cols, r_px)
+        # DSM - DTM: the terrain under the point, the surface maximum around it
+        dsm_src, dtm_src = srcs
+        r_px = int(round(radius_m / abs(dsm_src.res[0])))
+        rows, cols = grid(dsm_src, xy)
+        top = read_max(dsm_src, rows, cols, r_px)
+        rows2, cols2 = grid(dtm_src, xy)
+        ground = read_max(dtm_src, rows2, cols2, 0)
+        return top - ground
     return sample, srcs
 
 
 def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress_m=SUPPRESS_M,
            min_area=0.0, stands=None, stand_layer=None, stand_age=10, stand_buffer=-2.0,
-           keep_outside=False, chm=None, dtm=None, dsm=None, min_height=5.0, keep_low=False,
-           object_stage=True, object_threshold=None, prob_raster=None,
+           keep_outside=False, chm=None, dtm=None, dsm=None, min_height=3.0, height_radius=3.0,
+           keep_low=False, object_stage=True, object_threshold=None, prob_raster=None,
            edge_px=8, tile=2400, overlap=200, model=None, adaptel_threshold=None,
            progress=None, quiet=False):
     """Detect dead trees on a raster and write one point per tree.
@@ -162,13 +196,17 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
     stands, stand_layer, stand_age, stand_buffer, keep_outside : the
         optional stand mask (mask.load_stands); outside points are dropped
         unless keep_outside, then flagged in_stands = 0.
-    chm, dtm, dsm, min_height, keep_low : the optional height gate -- a
-        canopy height model, or a surface and a terrain model whose
-        difference is one. A point whose height is below min_height (5 m)
-        is dropped unless keep_low; the height is written as height_m
-        either way (None where the rasters have no data, never dropped).
-        Roads, fields and bare ground are what this removes; the LP method
-        of Onoszko et al. uses the same gate at 10 m.
+    chm, dtm, dsm, min_height, height_radius, keep_low : the optional
+        height gate -- a canopy height model, or a surface and a terrain
+        model whose difference is one. The height of a point is the
+        maximum within height_radius (3 m) of it, so a crown that sits a
+        few metres apart in the image and in the height model still
+        counts; a point whose height is below min_height (3 m) is dropped
+        unless keep_low; the height is written as height_m either way
+        (None where the rasters have no data, never dropped). This
+        separates ground, roads and shadow from standing trees and is
+        never evidence about the crown; the LP method of Onoszko et al.
+        uses a stricter 10 m gate on the value under the pixel.
     object_stage, object_threshold : score the object with the object
         forest (rgbn only) into p_object; drop below object_threshold if set.
     prob_raster : str, optional
@@ -200,9 +238,10 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
         object_forest = assets.load_forest("objects", quiet) if (object_stage and m.name == "rgbn") else None
         mask_geom = load_stands(stands, stand_layer, min_age=stand_age, buffer_m=stand_buffer,
                                 quiet=quiet) if stands else None
-        height_at, height_srcs = _height_sampler(chm, dtm, dsm, ds.crs)
+        height_at, height_srcs = _height_sampler(chm, dtm, dsm, ds.crs, height_radius)
         if height_at is not None and not quiet:
-            print(f"pygeosnag: height gate {min_height:g} m from {os.path.basename(chm) if chm else 'DSM - DTM'}", flush=True)
+            print(f"pygeosnag: height gate {min_height:g} m (max within {height_radius:g} m) from "
+                  f"{os.path.basename(chm) if chm else 'DSM - DTM'}", flush=True)
         nodata = ds.nodata if ds.nodata is not None else 0
         crs_wkt = ds.crs.to_wkt() if ds.crs else ""
         if os.path.exists(out_path):

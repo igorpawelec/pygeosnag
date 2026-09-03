@@ -21,7 +21,8 @@ def _detect(a):
     n = detect(a.raster, a.output, mode=a.mode, bands=bands, threshold=a.threshold, suppress_m=a.suppress,
                min_area=a.min_area, stands=a.stands, stand_layer=a.stand_layer, stand_age=a.stand_age,
                stand_buffer=a.stand_buffer, keep_outside=a.keep_outside,
-               chm=a.chm, dtm=a.dtm, dsm=a.dsm, min_height=a.min_height, keep_low=a.keep_low,
+               chm=a.chm, dtm=a.dtm, dsm=a.dsm, min_height=a.min_height, height_radius=a.height_radius,
+               keep_low=a.keep_low,
                object_stage=not a.no_object_stage,
                object_threshold=a.object_threshold, prob_raster=a.prob_raster, edge_px=a.edge_px,
                tile=a.tile, overlap=a.overlap, model=a.model, adaptel_threshold=a.adaptel_threshold, quiet=a.quiet)
@@ -74,7 +75,9 @@ def main(argv=None):
     d.add_argument("--chm", default=None, help="canopy height model: points below --min-height are dropped")
     d.add_argument("--dtm", default=None, help="terrain model, with --dsm an alternative to --chm")
     d.add_argument("--dsm", default=None, help="surface model, with --dtm an alternative to --chm")
-    d.add_argument("--min-height", type=float, default=5.0, help="height gate in metres (default 5)")
+    d.add_argument("--min-height", type=float, default=3.0, help="height gate in metres (default 3)")
+    d.add_argument("--height-radius", type=float, default=3.0,
+                   help="the height of a point is the maximum within this radius, m (default 3)")
     d.add_argument("--keep-low", action="store_true", help="keep points below the gate, with height_m written")
     d.add_argument("--prob-raster", default=None, help="also write the per-pixel probability GeoTIFF")
     d.add_argument("--suppress", type=float, default=3.0, help="drop the weaker of two points closer than this, m")
