@@ -24,7 +24,7 @@ geosnag detect ortho.tif -o trees.gpkg                       # 4 bands: R, G, B,
 geosnag detect cir.tif -o trees.gpkg --mode cir              # 3 bands: NIR, R, G
 geosnag detect ortho.tif -o trees.gpkg --bands nir,red,green,blue
 geosnag detect ortho.tif -o trees.gpkg --stands stands.gpkg  # keep points inside stands >= 10 years
-geosnag detect ortho.tif -o trees.gpkg --chm chm.tif         # drop points below 5 m (or --dsm/--dtm)
+geosnag detect ortho.tif -o trees.gpkg --chm chm.tif         # drop points with nothing taller than 3 m within 3 m (or --dsm/--dtm)
 geosnag grow ortho.tif trees.gpkg -o crowns.gpkg             # points -> crown polygons
 geosnag info
 ```
@@ -58,7 +58,7 @@ Three things the detector does not do: it does not separate dead from dying tree
 3. **Forest.** One per mode, 200 trees, balanced subsampling, trained on ~2 million adaptels from seven sites.
 4. **Threshold.** Absolute, p >= 0.5 by default; the useful range is 0.4–0.6. A per-scene quantile was tried and rejected: a scene without dead trees also has a top 1.5%.
 5. **Points.** Adjacent adaptels above the threshold are merged; the point is the object's area-weighted centroid (it beats the highest-scoring and the brightest adaptel); the weaker of two points closer than 3 m is dropped. Tiles overlap by 200 px and a point is written from the tile whose core holds it.
-6. **Optional.** A stand mask (polygons with a stand age field; stands of at least 10 years, shrunk by 2 m); a height gate from a canopy height model or a DSM/DTM pair (points below 5 m are bare ground, roads or stumps, not standing dead trees; the gate the Lasy Państwowe method of Onoszko applies at 10 m); the object forest (`p_object`, RGB+NIR).
+6. **Optional.** A stand mask (polygons with a stand age field; stands of at least 10 years, shrunk by 2 m); a height gate from a canopy height model or a DSM/DTM pair, a ground separator and nothing more: the height of a point is the maximum within 3 m, because an orthophoto and a height model rarely put the same crown in the same place, and a point with nothing taller than 3 m nearby is bare ground, a road or a shadow edge. Measured on six sites with GUGiK models of a vintage matched to the imagery: 0.5% of the reference tops dropped, F1 0.472 to 0.481 (a 2 m radius with a 5 m gate reaches 0.492 at 1.6% dropped); the height under the point itself would drop 18% of the reference tops. The model must not postdate the imagery, or it shows cleared stands where the dead trees stood. The Lasy Państwowe method of Onoszko gates at 10 m under the point; the object forest (`p_object`, RGB+NIR).
 7. **Crowns.** `grow_crowns` converts the mode's RGB-like trio to CIELAB and runs pygeoadaptels' `grow_seeds` with weights (0.5, 2.5, 1.0), a Delta-E tolerance of 15, a radius of 20 px and hole filling — the recipe worked out on a spruce plot with bleached snags.
 
 Input at another pixel size is resampled to 0.25 m. 8-bit input is what the models saw; 16-bit values are scaled so their 99.9th percentile lands at 255, with a warning.

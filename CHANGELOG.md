@@ -3,11 +3,16 @@
 ## 0.2.1 (unreleased)
 
 - Height gate: `detect(chm=...)` or `detect(dsm=..., dtm=...)` drops points
-  whose canopy height is below `min_height` (5 m) -- bare ground, roads and
-  stumps that share the colour of a dead crown -- and writes the height as
-  `height_m`; `keep_low` keeps them flagged. The gate the Lasy Państwowe
-  method (Onoszko) applies at 10 m with a normalised surface model. On the
-  command line: `--chm`, `--dsm`/`--dtm`, `--min-height`, `--keep-low`.
+  with nothing taller than `min_height` (3 m) within `height_radius` (3 m) --
+  bare ground, roads and shadow edges that share the colour of a dead crown --
+  and writes the height as `height_m`; `keep_low` keeps them flagged. The
+  maximum in a neighbourhood, not the height under the point: an orthophoto
+  and a height model rarely put the same crown in the same place, and the
+  height under the point would drop 18% of the reference tops. Measured on
+  six sites with vintage-matched GUGiK models: 0.5% of reference tops
+  dropped, F1 0.472 -> 0.481. The Lasy Państwowe method (Onoszko) gates at
+  10 m with a normalised surface model. On the command line: `--chm`,
+  `--dsm`/`--dtm`, `--min-height`, `--height-radius`, `--keep-low`.
 
 ## 0.2.0 — 2026-09-02
 
