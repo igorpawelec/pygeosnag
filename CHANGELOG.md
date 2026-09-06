@@ -2,6 +2,13 @@
 
 ## 0.2.1 (unreleased)
 
+- The height gate works again on rasterio 1.4 and newer. `Dataset.index`
+  now coerces its result with `int()`, which raises `TypeError` on the
+  coordinate arrays the sampler passes, so `detect(chm=...)` failed outright
+  on a recent rasterio; the row and column now come from the inverse
+  transform. Caught by the test suite on CI, where rasterio is current, and
+  invisible locally on rasterio 1.3.
+
 - Height gate: `detect(chm=...)` or `detect(dsm=..., dtm=...)` drops points
   with nothing taller than `min_height` (3 m) within `height_radius` (3 m) --
   bare ground, roads and shadow edges that share the colour of a dead crown --

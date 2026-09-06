@@ -131,11 +131,15 @@ def _height_sampler(chm, dtm, dsm, crs, radius_m=3.0):
     srcs = [rasterio.open(p) for p in paths]
 
     def grid(src, xy):
+        """Row and column of every point. Not ``src.index``: from rasterio 1.4
+        that coerces each result with ``int()``, which raises TypeError on the
+        arrays passed here, so the height gate died on any recent rasterio."""
         xs, ys = xy[:, 0], xy[:, 1]
         if crs and src.crs and src.crs != crs:
             xs, ys = _transform(crs, src.crs, list(xs), list(ys))
-        rows, cols = src.index(xs, ys)
-        return np.asarray(rows), np.asarray(cols)
+        inv = ~src.transform
+        cols, rows = inv * (np.asarray(xs, float), np.asarray(ys, float))
+        return np.floor(rows).astype(np.int64), np.floor(cols).astype(np.int64)
 
     def read_max(src, rows, cols, r_px):
         out = np.full(len(rows), np.nan)
