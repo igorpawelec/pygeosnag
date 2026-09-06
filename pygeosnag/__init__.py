@@ -36,7 +36,9 @@ try:
     from importlib.metadata import version as _version
     __version__ = _version("pygeosnag")
 except Exception:
-    __version__ = "0.2.0"
+    # No installed metadata: a copy vendored inside the QGIS plugin, say.
+    # Keep this in step with pyproject.toml, it is what such a copy reports.
+    __version__ = "0.2.1"
 
 __author__ = "Igor Pawelec"
 
