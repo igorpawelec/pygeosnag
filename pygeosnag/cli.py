@@ -26,7 +26,7 @@ def _detect(a):
                object_stage=not a.no_object_stage,
                object_threshold=a.object_threshold, prob_raster=a.prob_raster, edge_px=a.edge_px,
                tile=a.tile, overlap=a.overlap, model=a.model, adaptel_threshold=a.adaptel_threshold,
-               scene_norm=a.scene_norm, norm_tiles=a.norm_tiles, quiet=a.quiet)
+               scene_norm=a.scene_norm, norm_tiles=a.norm_tiles, radiometry=a.radiometry, quiet=a.quiet)
     return 0 if n >= 0 else 1
 
 
@@ -95,6 +95,8 @@ def main(argv=None):
                    help="scene normalisation of the spectral means: auto follows the model's manifest (default)")
     d.add_argument("--norm-tiles", type=int, default=16, help="tiles sampled for the scene statistics (default 16)")
     d.add_argument("--quiet", action="store_true")
+    d.add_argument("--radiometry", choices=["auto", "match", "off"], default="auto",
+                   help="map the scene's per-band 2-98 percentiles onto the training range: auto = only when the scene is hazy or flat (default)")
     d.set_defaults(func=_detect)
 
     g = sub.add_parser("grow", help="grow dead-tree points into crowns (pygeoadaptels grow_seeds, crown recipe)")

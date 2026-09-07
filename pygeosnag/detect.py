@@ -218,7 +218,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
            keep_outside=False, chm=None, dtm=None, dsm=None, min_height=3.0, height_radius=3.0,
            keep_low=False, object_stage=True, object_threshold=None, prob_raster=None,
            edge_px=8, tile=2400, overlap=200, model=None, adaptel_threshold=None,
-           scene_norm="auto", norm_tiles=16, progress=None, quiet=False):
+           scene_norm="auto", norm_tiles=16, radiometry="auto", progress=None, quiet=False):
     """Detect dead trees on a raster and write one point per tree.
 
     Parameters
@@ -279,6 +279,13 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
     norm_tiles : int
         How many tiles feed the scene statistics (16 -- a 2400 px tile is
         600 m, so 16 tiles is 5.8 km2 of adaptels).
+    radiometry : "auto" | "match" | "off" | radiometry.Radiometry
+        Per-band linear mapping of the scene's 2-98 percentiles onto the
+        training orthophotos' (radiometry.REFERENCE), measured on the same
+        sampled tiles. "auto" applies it only to a scene that is off --
+        hazy (dark end more than 15 DN above the reference) or flat (range
+        below 0.7 of the reference); "match" always; "off" never. The
+        first log lines say what was measured and whether it was applied.
     progress : callable(fraction, message) -> bool, optional
         Called after every tile; False cancels (RuntimeError "cancelled").
     """
@@ -351,16 +358,36 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         elif scene_norm == "auto" and not model:
             norm = SceneNorm.from_manifest_entry(assets.manifest_entry(m.name, quiet), feature_names(m))
         from rasterio.windows import Window
-        if norm is not None and not norm.fitted:
-            step = max(1, len(tiles) // max(1, int(norm_tiles)))
-            samples = []
-            for (r0, c0, h, w, *_rest) in tiles[::step][:int(norm_tiles)]:
+        from .radiometry import Radiometry
+        step = max(1, len(tiles) // max(1, int(norm_tiles)))
+        sampled = tiles[::step][:int(norm_tiles)]
+        # radiometry: the scene's per-band percentiles from the sampled tiles,
+        # before anything else looks at the pixels
+        if isinstance(radiometry, Radiometry):
+            rad = radiometry
+        else:
+            rad = Radiometry(radiometry)
+        if not rad.fitted and rad.kind != "off":
+            pool = {r: [] for r in index}
+            for (r0, c0, h, w, *_rest) in sampled:
                 arr = ds.read(window=Window(c0, r0, w, h)).astype(np.float32)
                 valid = ((np.isfinite(arr).all(axis=0)) if np.isnan(nodata)
                          else (arr != nodata).all(axis=0) & np.isfinite(arr).all(axis=0))
                 if valid.sum() < MIN_VALID_PX:
                     continue
-                band_roles = {r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()}
+                for r, i in index.items():
+                    pool[r].append(to_uint8(arr[i][valid])[::4])
+            rad.fit({r: np.concatenate(v) if v else np.zeros(0) for r, v in pool.items()})
+            report(0.0, f"pygeosnag: radiometry {rad.describe()}")
+        if norm is not None and not norm.fitted:
+            samples = []
+            for (r0, c0, h, w, *_rest) in sampled:
+                arr = ds.read(window=Window(c0, r0, w, h)).astype(np.float32)
+                valid = ((np.isfinite(arr).all(axis=0)) if np.isnan(nodata)
+                         else (arr != nodata).all(axis=0) & np.isfinite(arr).all(axis=0))
+                if valid.sum() < MIN_VALID_PX:
+                    continue
+                band_roles = rad.apply({r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()})
                 samples.append(tile_features(band_roles, valid, m, adaptel_threshold))
             if not samples:
                 raise RuntimeError("pygeosnag: no valid tile to gather scene statistics from")
@@ -381,7 +408,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
                 report((k + 1) / len(tiles), f"  tile {k + 1}/{len(tiles)} ({tag}): nodata, skipped")
                 continue
             tf = ds.window_transform(win)
-            band_roles = {r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()}
+            band_roles = rad.apply({r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()})
             res = detect_array(band_roles, valid, m, forest, tf, threshold, object_forest, adaptel_threshold,
                                scene_norm=norm)
             if prob_dst is not None:

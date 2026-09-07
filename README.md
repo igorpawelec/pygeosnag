@@ -19,6 +19,8 @@ The models are release assets, not part of the wheel. They are downloaded on fir
 
 Since assets-v2 the RGB+NIR and CIR forests are trained on spectral means standardised within each scene, and `detect` repeats that on your raster: a first pass over 16 tiles gathers the scene's medians and MADs of the five means, then every tile is scored on the standardised values (`--scene-norm auto`, the default; the manifest says which forests need it). This is what lets a forest trained on one set of flights score a flight with a different colour balance: the absolute means of a scene shift with the camera and the day, the contrast to the surrounding canopy does not. The calibrated cut for assets-v2 is `p >= 0.7` (`assets.operating_threshold()`; recall is flat from 0.6 to 0.8 while precision rises); `p_object` from the object forest is a second, stricter score -- on an unseen scene `p_object >= 0.4` roughly halves the false points at two thirds of the trees.
 
+Since 0.3.2 `detect` also looks at the pixels themselves: the per-band 2nd and 98th percentiles of the sampled tiles are compared with those of the training orthophotos, and a scene that is hazy (dark end more than 15 DN above the reference) or flat (range below 0.7 of the reference) is mapped linearly onto the training range before segmentation (`--radiometry auto`, the default; `match` always, `off` never). On a Radom 2017 pine scene the forests saw nothing at all before this (highest probability 0.23) and grey crowns above 0.6 after it; a scene within the corridor is left untouched. The log says which.
+
 ## Use
 
 ```bash

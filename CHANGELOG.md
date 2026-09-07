@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 — radiometry matching for hazy and flat scenes
+
+- `radiometry.Radiometry`: the scene's per-band 2-98 percentiles (from the
+  tiles the scene normalisation samples) are mapped linearly onto the
+  training orthophotos' reference percentiles (`REFERENCE`, medians over
+  the nine training rasters). `detect(radiometry="auto")` (default) does
+  it only when the scene is hazy (dark end > 15 DN above the reference) or
+  flat (range < 0.7 of the reference); `"match"` always, `"off"` never;
+  `--radiometry` on the CLI. Measured on the 200-AOI batch of 2026-09-07:
+  48 of 200 scenes trigger; on three that gave zero points a 600 m crop
+  went from a highest probability of 0.21-0.59 to 11-61 points above 0.6,
+  on grey crowns. Scene normalisation could not do this: it standardises
+  the five absolute means, not the pixel-level contrasts the other
+  fifteen features are built on.
+
 ## 0.3.1 — the auto band mode reads the band order off the raster
 
 - With no `mode` and no `bands`, `detect` samples nine windows and looks
