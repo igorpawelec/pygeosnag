@@ -24,8 +24,17 @@ MIN_VALID_PX = 10_000          # a tile with fewer valid pixels is skipped, as i
 SUPPRESS_M = 3.0               # two points closer than this: the weaker one goes
 
 
+def tile_features(bands, valid, mode, adaptel_threshold=None):
+    """Segment one window and return its feature table only (for scene statistics)."""
+    roles = {r: np.asarray(bands[r], np.float32) for r in mode.roles}
+    seg = segment(roles, valid, mode, adaptel_threshold)
+    lch = lch_of(roles, mode)
+    X, lab, cnt, mr, mc = segment_features(seg, roles, valid, lch, mode)
+    return np.where(np.isfinite(X), X, 0.0).astype(np.float32)[cnt >= MIN_PX]
+
+
 def detect_array(bands, valid, mode, forest, transform=None, threshold=0.5, object_forest=None,
-                 adaptel_threshold=None):
+                 adaptel_threshold=None, scene_norm=None):
     """The pipeline on one window.
 
     Parameters
@@ -38,6 +47,9 @@ def detect_array(bands, valid, mode, forest, transform=None, threshold=0.5, obje
     threshold : float, absolute probability cut (0.5 calibrated)
     object_forest : fitted object forest, optional (rgbn)
     adaptel_threshold : float, optional -- overrides the mode's granularity
+    scene_norm : scenenorm.SceneNorm, optional -- fitted scene statistics; the
+        segment features are transformed before the forest sees them (the
+        object features stay in the raw feature space)
 
     Returns
     -------
@@ -54,7 +66,8 @@ def detect_array(bands, valid, mode, forest, transform=None, threshold=0.5, obje
     big = cnt >= MIN_PX
     p = np.zeros(len(cnt), np.float32)
     if big.any():
-        p[big] = forest.predict_proba(Xf[big])[:, 1]
+        Xs = scene_norm.apply(Xf[big]) if scene_norm is not None else Xf[big]
+        p[big] = forest.predict_proba(Xs)[:, 1]
     pred = big & (p >= threshold)
     e = edges_of(seg, valid)
     obj_of, n_obj = build_objects(pred, e)
@@ -175,12 +188,12 @@ def _height_sampler(chm, dtm, dsm, crs, radius_m=3.0):
     return sample, srcs
 
 
-def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress_m=SUPPRESS_M,
+def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppress_m=SUPPRESS_M,
            min_area=0.0, stands=None, stand_layer=None, stand_age=10, stand_buffer=-2.0,
            keep_outside=False, chm=None, dtm=None, dsm=None, min_height=3.0, height_radius=3.0,
            keep_low=False, object_stage=True, object_threshold=None, prob_raster=None,
            edge_px=8, tile=2400, overlap=200, model=None, adaptel_threshold=None,
-           progress=None, quiet=False):
+           scene_norm="auto", norm_tiles=16, progress=None, quiet=False):
     """Detect dead trees on a raster and write one point per tree.
 
     Parameters
@@ -190,9 +203,12 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
         ``dead_trees``: p, p_mean, p_object, area_m2, n_adaptels,
         in_stands, height_m, edge_px, tile, mode, model).
     mode, bands : see modes.resolve_mode.
-    threshold : float
-        Absolute probability cut per adaptel; 0.5 is calibrated, 0.4-0.6
-        the useful range; on a scene the model has not seen, lower.
+    threshold : float, optional
+        Absolute probability cut per adaptel. None (default) takes the
+        operating point of the shipped models from their manifest (0.7 for
+        assets-v2, 0.5 for assets-v1; 0.5 with a custom `model`). Recall is
+        flat between 0.6 and 0.8 for assets-v2 while precision rises; on a
+        scene the model has not seen, lower.
     suppress_m : float
         Two points closer than this keep only the higher p (3 m).
     min_area : float
@@ -221,6 +237,19 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
         A segment forest .joblib to use instead of the shipped one.
     adaptel_threshold : float, optional
         Override the mode's adaptel granularity (advanced).
+    scene_norm : "auto" | "off" | scenenorm.SceneNorm
+        Scene normalisation of the absolute spectral means. "auto" follows
+        the forest's manifest entry ("feature_transform"): when the forest
+        was trained on scene-standardised features, a first pass over
+        `norm_tiles` tiles spread across the raster gathers the medians and
+        MADs, and every tile's features are transformed before scoring.
+        "off" skips it (only correct for a forest trained without it). A
+        fitted SceneNorm is used as given (statistics from another scene,
+        say). The statistics are printed, and the run refuses to score a
+        transform-trained forest without them.
+    norm_tiles : int
+        How many tiles feed the scene statistics (16 -- a 2400 px tile is
+        600 m, so 16 tiles is 5.8 km2 of adaptels).
     progress : callable(fraction, message) -> bool, optional
         Called after every tile; False cancels (RuntimeError "cancelled").
     """
@@ -240,6 +269,8 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
             forest = assets.load_forest(m.name, quiet)
             model_id = f"{assets.RELEASE}/{m.name}"
         object_forest = assets.load_forest("objects", quiet) if (object_stage and m.name == "rgbn") else None
+        if threshold is None:
+            threshold = 0.5 if model else assets.operating_threshold(default=0.5, quiet=quiet)
         mask_geom = load_stands(stands, stand_layer, min_age=stand_age, buffer_m=stand_buffer,
                                 quiet=quiet) if stands else None
         height_at, height_srcs = _height_sampler(chm, dtm, dsm, ds.crs, height_radius)
@@ -268,6 +299,34 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
 
         report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, "
                     f"{len(tiles)} tiles, threshold {threshold}")
+
+        # scene normalisation: what the forest was trained with decides
+        from .features import feature_names
+        from .scenenorm import SceneNorm
+        norm = None
+        if isinstance(scene_norm, SceneNorm):
+            norm = scene_norm
+        elif scene_norm == "auto" and not model:
+            norm = SceneNorm.from_manifest_entry(assets.manifest_entry(m.name, quiet), feature_names(m))
+        if norm is not None and not norm.fitted:
+            step = max(1, len(tiles) // max(1, int(norm_tiles)))
+            samples = []
+            from rasterio.windows import Window
+            for (r0, c0, h, w, *_rest) in tiles[::step][:int(norm_tiles)]:
+                arr = ds.read(window=Window(c0, r0, w, h)).astype(np.float32)
+                valid = ((np.isfinite(arr).all(axis=0)) if np.isnan(nodata)
+                         else (arr != nodata).all(axis=0) & np.isfinite(arr).all(axis=0))
+                if valid.sum() < MIN_VALID_PX:
+                    continue
+                band_roles = {r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()}
+                samples.append(tile_features(band_roles, valid, m, adaptel_threshold))
+            if not samples:
+                raise RuntimeError("pygeosnag: no valid tile to gather scene statistics from")
+            norm.fit_from_samples(samples)
+            report(0.0, f"pygeosnag: scene normalisation ({norm.kind}) from {len(samples)} tiles: {norm.describe()}")
+        elif scene_norm == "off" and not model and assets.manifest_entry(m.name, quiet).get("feature_transform"):
+            raise RuntimeError("pygeosnag: this forest was trained on scene-normalised features; "
+                               "scene_norm='off' would score it on the wrong scale")
         n_total = 0
         for k, (r0, c0, h, w, cr0, cr1, cc0, cc1) in enumerate(tiles):
             from rasterio.windows import Window
@@ -282,7 +341,8 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=0.5, suppress
                 continue
             tf = ds.window_transform(win)
             band_roles = {r: to_uint8(np.where(valid, arr[i], 0.0)) for r, i in index.items()}
-            res = detect_array(band_roles, valid, m, forest, tf, threshold, object_forest, adaptel_threshold)
+            res = detect_array(band_roles, valid, m, forest, tf, threshold, object_forest, adaptel_threshold,
+                               scene_norm=norm)
             if prob_dst is not None:
                 pr = np.full(valid.shape, -1.0, np.float32)
                 lab = res["seg"][valid] - res["seg"][valid].min()

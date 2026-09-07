@@ -14,7 +14,7 @@ import json
 import os
 import urllib.request
 
-RELEASE = "assets-v1"
+RELEASE = "assets-v2"
 URL = f"https://github.com/igorpawelec/pygeosnag/releases/download/{RELEASE}/{{name}}"
 KEYS = {"rgbn": "segments_rgbn", "cir": "segments_cir", "rgb": "segments_rgb", "objects": "objects_rgbn"}
 
@@ -83,6 +83,20 @@ def load_forest(key, quiet=False):
     """A scikit-learn forest: "rgbn", "cir", "rgb" (segments) or "objects"."""
     import joblib
     return joblib.load(asset_path(KEYS.get(key, key), quiet))
+
+
+def manifest_entry(key, quiet=False):
+    """The manifest record of an asset ("rgbn" -> segments_rgbn), or {}."""
+    m = manifest(quiet)
+    return m["files"].get(KEYS.get(key, key), {})
+
+
+def operating_threshold(default=0.5, quiet=False):
+    """The probability cut the shipped forests were calibrated at."""
+    try:
+        return float(manifest(quiet)["operating_point"]["threshold"])
+    except Exception:                        # noqa: BLE001 -- a missing manifest must not stop detect
+        return default
 
 
 def feature_table(mode, quiet=False):

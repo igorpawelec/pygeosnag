@@ -1,7 +1,7 @@
 """geosnag -- command line front end.
 
     geosnag detect ortho.tif -o trees.gpkg [--mode rgbn|cir|rgb] [--bands red,green,blue,nir]
-                   [--threshold 0.5] [--stands stands.gpkg] [--prob-raster p.tif] [--quiet]
+                   [--threshold 0.7] [--stands stands.gpkg] [--prob-raster p.tif] [--quiet]
     geosnag grow   ortho.tif trees.gpkg -o crowns.gpkg [--mode ...] [--max-cost 15] [--max-radius 20]
     geosnag info
 
@@ -25,7 +25,8 @@ def _detect(a):
                keep_low=a.keep_low,
                object_stage=not a.no_object_stage,
                object_threshold=a.object_threshold, prob_raster=a.prob_raster, edge_px=a.edge_px,
-               tile=a.tile, overlap=a.overlap, model=a.model, adaptel_threshold=a.adaptel_threshold, quiet=a.quiet)
+               tile=a.tile, overlap=a.overlap, model=a.model, adaptel_threshold=a.adaptel_threshold,
+               scene_norm=a.scene_norm, norm_tiles=a.norm_tiles, quiet=a.quiet)
     return 0 if n >= 0 else 1
 
 
@@ -66,7 +67,8 @@ def main(argv=None):
     d.add_argument("-o", "--output", required=True, help="output GeoPackage (layer dead_trees)")
     d.add_argument("--mode", choices=sorted(MODES), default=None, help="band mode (default: rgbn for 4 bands, rgb for 3)")
     d.add_argument("--bands", default=None, help="role of each raster band in order, e.g. nir,red,green,blue")
-    d.add_argument("--threshold", type=float, default=0.5, help="probability cut per adaptel (default 0.5)")
+    d.add_argument("--threshold", type=float, default=None,
+                   help="probability cut; default = the models' operating point from the manifest (0.7 for assets-v2)")
     d.add_argument("--stands", default=None, help="stand polygons for the forest mask")
     d.add_argument("--stand-layer", default=None)
     d.add_argument("--stand-age", type=float, default=10)
@@ -89,6 +91,9 @@ def main(argv=None):
     d.add_argument("--overlap", type=int, default=200)
     d.add_argument("--model", default=None, help="a segment forest .joblib instead of the shipped one")
     d.add_argument("--adaptel-threshold", type=float, default=None)
+    d.add_argument("--scene-norm", choices=["auto", "off"], default="auto",
+                   help="scene normalisation of the spectral means: auto follows the model's manifest (default)")
+    d.add_argument("--norm-tiles", type=int, default=16, help="tiles sampled for the scene statistics (default 16)")
     d.add_argument("--quiet", action="store_true")
     d.set_defaults(func=_detect)
 
