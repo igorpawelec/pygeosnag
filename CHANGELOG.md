@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.3.0 (unreleased) — assets v2 and scene normalisation
+## 0.3.1 — the auto band mode reads the band order off the raster
+
+- With no `mode` and no `bands`, `detect` samples nine windows and looks
+  at the band medians: a 3-band raster whose second band is the darkest
+  is CIR (NIR, R, G), one whose second band is the brightest is RGB; a
+  4-band raster whose first band is the brightest is NIR, R, G, B. The
+  first log line names the decision and the medians. Before, three bands
+  were always RGB, and a CIR orthophoto run that way found almost nothing
+  (Ramsowo 2024: 4 points on a 600 m crop against 230 in the CIR mode).
+  `modes.guess_band_order` holds the rule; `mode=` / `bands=` override it.
+
+## 0.3.0 — assets v2 and scene normalisation
 
 - **Models (assets-v2).** The three segment forests and the object forest
   are retrained on the full reference: the seven research sites plus

@@ -38,6 +38,44 @@ MODES = {
 DEFAULT_ORDER = {4: ("red", "green", "blue", "nir"), 3: ("red", "green", "blue")}
 
 
+def guess_band_order(medians):
+    """What the bands of a raster most likely are, from their medians over a
+    vegetation-dominated sample.
+
+    Over canopy the near infrared is by far the brightest band and red the
+    darkest. So a CIR orthophoto (NIR, R, G) has its second band darkest and
+    an RGB one (R, G, B) its second band brightest; a 4-band stack in
+    NIR, R, G, B order has its first band brightest, one in R, G, B, NIR
+    its last. A CIR raster read as RGB finds almost nothing, which is why
+    `detect` asks this when no mode and no band roles were given.
+
+    Returns ``(mode, bands, reason)``; ``mode`` is None when the medians
+    say nothing certain (a bare or built-up scene, say) and the caller
+    keeps its default.
+    """
+    m = [float(v) for v in medians]
+    if len(m) == 3:
+        m1, m2, m3 = m
+        if m2 < m1 and m2 < m3 and (min(m1, m3) - m2) > 0.1 * max(m2, 1e-6):
+            return "cir", ("nir", "red", "green"), \
+                f"band 2 is the darkest (medians {m1:.0f}, {m2:.0f}, {m3:.0f}), so NIR, R, G"
+        if m2 > m1 and m2 > m3:
+            return "rgb", ("red", "green", "blue"), \
+                f"band 2 is the brightest (medians {m1:.0f}, {m2:.0f}, {m3:.0f}), so R, G, B"
+        return None, None, f"band medians {m1:.0f}, {m2:.0f}, {m3:.0f} say nothing certain"
+    if len(m) >= 4:
+        m1, m2, m3, m4 = m[:4]
+        rest = max(m2, m3, m4)
+        if m1 > rest and (m1 - rest) > 0.1 * max(m1, 1e-6):
+            return "rgbn", ("nir", "red", "green", "blue"), \
+                f"band 1 is the brightest (medians {m1:.0f}, {m2:.0f}, {m3:.0f}, {m4:.0f}), so NIR, R, G, B"
+        if m4 > max(m1, m2, m3):
+            return "rgbn", ("red", "green", "blue", "nir"), \
+                f"band 4 is the brightest (medians {m1:.0f}, {m2:.0f}, {m3:.0f}, {m4:.0f}), so R, G, B, NIR"
+        return None, None, f"band medians {m1:.0f}, {m2:.0f}, {m3:.0f}, {m4:.0f} say nothing certain"
+    return None, None, "fewer than three bands"
+
+
 def resolve_mode(n_bands, mode=None, bands=None):
     """Decide the mode and where each role sits in the raster.
 
@@ -47,8 +85,8 @@ def resolve_mode(n_bands, mode=None, bands=None):
         Number of bands in the raster.
     mode : str, optional
         "rgbn", "cir" or "rgb". Default: rgbn for 4 bands, rgb for 3.
-        A CIR orthophoto looks like any 3-band raster, so it has to be
-        declared.
+        A CIR orthophoto looks like any 3-band raster: declare it, or let
+        `detect` guess from the band medians (guess_band_order).
     bands : sequence of str, optional
         Role of every raster band in raster order, e.g.
         ("nir", "red", "green", "blue"); roles the mode does not use may

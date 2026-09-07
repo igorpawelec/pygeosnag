@@ -65,7 +65,7 @@ def main(argv=None):
     d = sub.add_parser("detect", help="one point per dead tree")
     d.add_argument("raster")
     d.add_argument("-o", "--output", required=True, help="output GeoPackage (layer dead_trees)")
-    d.add_argument("--mode", choices=sorted(MODES), default=None, help="band mode (default: rgbn for 4 bands, rgb for 3)")
+    d.add_argument("--mode", choices=sorted(MODES), default=None, help="band mode (default: from the band count and the band medians -- 3 bands are cir when band 2 is the darkest, else rgb)")
     d.add_argument("--bands", default=None, help="role of each raster band in order, e.g. nir,red,green,blue")
     d.add_argument("--threshold", type=float, default=None,
                    help="probability cut; default = the models' operating point from the manifest (0.7 for assets-v2)")

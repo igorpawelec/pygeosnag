@@ -31,6 +31,8 @@ geosnag grow ortho.tif trees.gpkg -o crowns.gpkg             # points -> crown p
 geosnag info
 ```
 
+Without `--mode` or `--bands`, `detect` reads the band order off the raster: a 3-band file is CIR when its second band is the darkest over a sample of its pixels (vegetation absorbs red and reflects near infrared), else RGB; a 4-band file is NIR, R, G, B when its first band is the brightest, else R, G, B, NIR. The first log line says which; a CIR orthophoto read as RGB finds almost nothing.
+
 ```python
 from pygeosnag import detect, grow_crowns
 detect("ortho.tif", "trees.gpkg", stands="stands.gpkg")

@@ -2,7 +2,7 @@
 import pytest
 
 from pygeosnag.features import feature_names
-from pygeosnag.modes import MODES, resolve_mode
+from pygeosnag.modes import MODES, guess_band_order, resolve_mode
 
 
 def test_defaults():
@@ -40,3 +40,16 @@ def test_feature_layout_matches_the_research_names():
 
 def test_thresholds_are_the_matched_granularity():
     assert MODES["rgbn"].threshold == 60 and MODES["cir"].threshold == 50 and MODES["rgb"].threshold == 40
+
+
+def test_guess_band_order_from_vegetation_medians():
+    mode, bands, why = guess_band_order((124, 64, 85))          # a CIR orthophoto: red darkest
+    assert mode == "cir" and bands == ("nir", "red", "green") and "darkest" in why
+    mode, bands, _ = guess_band_order((70, 90, 60))             # RGB over canopy: green brightest
+    assert mode == "rgb" and bands == ("red", "green", "blue")
+    mode, bands, _ = guess_band_order((130, 60, 80, 50))        # NIR first
+    assert mode == "rgbn" and bands == ("nir", "red", "green", "blue")
+    mode, bands, _ = guess_band_order((60, 80, 50, 130))        # R, G, B, NIR
+    assert mode == "rgbn" and bands == ("red", "green", "blue", "nir")
+    assert guess_band_order((100, 80, 60))[0] is None           # bare ground: nothing certain
+    assert guess_band_order((100, 98, 120))[0] is None          # margin too small

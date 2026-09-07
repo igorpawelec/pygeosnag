@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 from .features import GSD, MIN_PX, edges_of, feature_names, lch_of, segment_features, to_uint8
-from .modes import resolve_mode
+from .modes import DEFAULT_ORDER, guess_band_order, resolve_mode
 from .objects import build_objects, object_features, suppress
 from .segment import segment
 
@@ -122,6 +122,31 @@ def _open(raster_path, quiet):
     return src, src
 
 
+def _sniff_bands(ds, grid=3, size=256):
+    """Per-band medians over `grid` x `grid` windows spread across the raster
+    (finite pixels only), or None when too little of it holds data."""
+    from rasterio.windows import Window
+    H, W = ds.height, ds.width
+    size = int(min(size, H, W))
+    parts = []
+    for i in range(1, grid + 1):
+        for j in range(1, grid + 1):
+            r0 = max(0, min(H - size, int(H * i / (grid + 1)) - size // 2))
+            c0 = max(0, min(W - size, int(W * j / (grid + 1)) - size // 2))
+            a = ds.read(window=Window(c0, r0, size, size)).astype(np.float64)
+            ok = np.isfinite(a).all(axis=0)
+            if ds.nodata is not None and not np.isnan(ds.nodata):
+                ok &= (a != ds.nodata).all(axis=0)
+            if ok.any():
+                parts.append(a[:, ok])
+    if not parts:
+        return None
+    pool = np.concatenate(parts, axis=1)
+    if pool.shape[1] < 1000:
+        return None
+    return np.median(pool, axis=1)
+
+
 def _height_sampler(chm, dtm, dsm, crs, radius_m=3.0):
     """A function xy (n, 2) in the orthophoto's CRS -> canopy height in metres:
     the *maximum* within `radius_m` of the point, NaN where the height
@@ -202,7 +227,11 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         Input orthophoto (any GDAL format) and output GeoPackage (layer
         ``dead_trees``: p, p_mean, p_object, area_m2, n_adaptels,
         in_stands, height_m, edge_px, tile, mode, model).
-    mode, bands : see modes.resolve_mode.
+    mode, bands : see modes.resolve_mode. With neither given, a 3-band
+        raster is read as CIR when its second band is the darkest over a
+        sample of its pixels (vegetation absorbs red), else as RGB, and a
+        4-band one as NIR, R, G, B when its first band is the brightest;
+        the first log line says which, and mode= or bands= override it.
     threshold : float, optional
         Absolute probability cut per adaptel. None (default) takes the
         operating point of the shipped models from their manifest (0.7 for
@@ -260,6 +289,19 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
     t_all = time.time()
     src, ds = _open(raster_path, quiet)
     try:
+        # No mode, no band roles: read the band order off the raster itself.
+        # A CIR orthophoto read as RGB finds almost nothing, and nothing in a
+        # 3-band file says which it is -- except that vegetation absorbs red
+        # and reflects near infrared.
+        mode_note = ""
+        if mode is None and bands is None and ds.count in (3, 4):
+            med = _sniff_bands(ds)
+            guess, g_bands, why = guess_band_order(med) if med is not None else (None, None, "no data sampled")
+            if guess is not None and g_bands != DEFAULT_ORDER[ds.count]:
+                mode, bands = guess, g_bands
+                mode_note = f" (auto: {why}; pass mode= or bands= if that is wrong)"
+            elif guess is None:
+                mode_note = f" (auto: {why}; kept the default)"
         m, index = resolve_mode(ds.count, mode, bands)
         if model:
             import joblib
@@ -297,7 +339,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
             if progress is not None and progress(frac, msg) is False:
                 raise RuntimeError("pygeosnag: cancelled")
 
-        report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, "
+        report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}{mode_note}, "
                     f"{len(tiles)} tiles, threshold {threshold}")
 
         # scene normalisation: what the forest was trained with decides
@@ -308,10 +350,10 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
             norm = scene_norm
         elif scene_norm == "auto" and not model:
             norm = SceneNorm.from_manifest_entry(assets.manifest_entry(m.name, quiet), feature_names(m))
+        from rasterio.windows import Window
         if norm is not None and not norm.fitted:
             step = max(1, len(tiles) // max(1, int(norm_tiles)))
             samples = []
-            from rasterio.windows import Window
             for (r0, c0, h, w, *_rest) in tiles[::step][:int(norm_tiles)]:
                 arr = ds.read(window=Window(c0, r0, w, h)).astype(np.float32)
                 valid = ((np.isfinite(arr).all(axis=0)) if np.isnan(nodata)
@@ -329,7 +371,6 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
                                "scene_norm='off' would score it on the wrong scale")
         n_total = 0
         for k, (r0, c0, h, w, cr0, cr1, cc0, cc1) in enumerate(tiles):
-            from rasterio.windows import Window
             t0 = time.time()
             win = Window(c0, r0, w, h)
             arr = ds.read(window=win).astype(np.float32)
