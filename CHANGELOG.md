@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 — a new default crown recipe: within-reach growing on NDVI + L
+
+- Default `grow_crowns(space="auto", rule="reach")`: the feature space is
+  100 * NDVI and CIELAB L with a NIR band (`lab_w`, the old weighted CIELAB,
+  without one), and the assignment rule is pygeosnag's own kernel
+  (`growkernel.ift_within_reach`): a pixel goes to the seed within the
+  radius and under the tolerance with the lowest minimax path cost, the
+  cuts inside the growth. The old behaviour -- pygeoadaptels' single global
+  IFT partition with every seed, cut by tolerance and radius afterwards --
+  is kept as `rule="partition"`. Why: in a dense cluster of dead trees a
+  pixel won by a farther seed and then cut by the radius never returned to
+  the near seed; on Gizycko the seed of a crown kept 39% of its own pixels
+  whatever the tolerance or radius.
+- Measured (SDT_research2026/80_grow_bench): tolerance chosen on 2027
+  Gizycko crowns, validated on 1113 crowns of the 8 publication sites, the
+  detector's own points as competitors. New default: 8 sites median IoU
+  0.652, 72% above 0.5, OS 0.03, US 0.22; Gizycko 0.478, 45%. Old recipe:
+  0.526, 54%, OS 0.00, US 0.38; Gizycko 0.335, 14%. The within-reach kernel
+  is also about five times faster than the partition on the same window.
+- `--space` and `--rule` on the CLI; `SPACES_REACH` holds the tolerances
+  per space under the new rule (raw is not benchmarked under it).
+
 ## 0.3.5 — a feature space for the growing, benchmarked
 
 - `grow_crowns(space=...)` and `geosnag grow --space`: `lab_w` (the shipped

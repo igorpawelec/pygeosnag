@@ -49,6 +49,24 @@ SPACES = {
     "ndvi_L": dict(max_cost=45.0, band_weights=None),
     "raw": dict(max_cost=70.0, band_weights=None),
 }
+# Assignment rule. "partition": pygeoadaptels' grow_seeds, one global IFT partition with
+# every seed, the tolerance and radius cut afterwards -- a pixel won by a far seed and then
+# cut never returns to the near one (dense clusters lose up to half a crown). "reach":
+# pygeosnag.growkernel, a pixel goes to the eligible seed (within the radius, under the
+# tolerance) with the lowest path cost; the far seeds no longer absorb the spill-over, so
+# the tolerances are tighter (SPACES_REACH).
+SPACES_REACH = {
+    "lab_w": dict(max_cost=15.0, band_weights=(0.5, 2.5, 1.0)),
+    "lab": dict(max_cost=20.0, band_weights=None),
+    "ndvi_L": dict(max_cost=20.0, band_weights=None),
+    "raw": dict(max_cost=35.0, band_weights=None),        # not benchmarked under this rule
+}
+# The default since 0.4.0: rule "reach" on "ndvi_L" (tolerance 20), "lab_w" when the raster
+# has no NIR band. On the 8-site validation (1113 verified crowns) it grew crowns at a median
+# IoU of 0.65 (72% above 0.5, over-segmentation 0.03, under-segmentation 0.22) against 0.53
+# (54%, 0.00, 0.38) for the previous recipe; on the 2027 Gizycko crowns 0.48 against 0.34.
+DEFAULT_SPACE = "auto"
+DEFAULT_RULE = "reach"
 
 
 def lab_raster(raster_path, out_path, mode=None, bands=None, quiet=False):
@@ -114,7 +132,7 @@ def _tiles(height, width, striped, tile):
     return out
 
 
-def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe, space="lab_w"):
+def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe, space="lab_w", rule="partition"):
     """Grow one tile: read core + halo, CIELAB, grow_seeds with every point in the
     window, keep the crowns of the core's points. Returns (core labels with GLOBAL
     point ids, -1 unassigned; core transform; pixel counts per id; points in core)
@@ -139,7 +157,12 @@ def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe, space
     gid, local = gid[ok], local[ok]
     if len(gid) == 0:
         return None
-    labels = grow_seeds(lab, local, mask=(~valid).astype(np.uint8), quiet=True, **recipe)
+    if rule == "reach":
+        from .growkernel import grow_within_reach
+        labels = grow_within_reach(lab, local, mask=(~valid).astype(np.uint8),
+                                   **{k: v for k, v in recipe.items() if k in ("max_cost", "band_weights", "max_radius", "fill_holes")})
+    else:
+        labels = grow_seeds(lab, local, mask=(~valid).astype(np.uint8), quiet=True, **recipe)
     is_core = ((seeds_rc[gid, 0] >= r0) & (seeds_rc[gid, 0] < r1) & (seeds_rc[gid, 1] >= c0) & (seeds_rc[gid, 1] < c1))
     to_global = np.where(is_core, gid, -1).astype(np.int32)
     lab_global = np.where(labels >= 0, to_global[np.clip(labels, 0, None)], -1).astype(np.int32)
@@ -157,8 +180,8 @@ def _grow_tile_star(a):
 
 
 def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, labels_out=None,
-                points_layer=None, tile=2048, halo=None, workers=1, progress=None, quiet=False, space="lab_w",
-                **recipe):
+                points_layer=None, tile=2048, halo=None, workers=1, progress=None, quiet=False, space=DEFAULT_SPACE,
+                rule=DEFAULT_RULE, **recipe):
     """Grow a point layer of dead trees into crown polygons, tile by tile.
 
     Parameters
@@ -184,12 +207,18 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         no interpreter to spawn).
     progress : callable(fraction, message) -> bool, optional
         Called after every tile; False cancels (RuntimeError "cancelled").
-    space : "lab_w" | "lab" | "ndvi_L" | "raw"
-        Feature space of the growing (SPACES): the shipped recipe is CIELAB with a*
-        weighted 2.5; "ndvi_L" (100 * NDVI and L, tolerance 45) grew the best crowns
-        on the 8-site benchmark (IoU median 0.62 against 0.53) and needs a NIR band.
-        Each space carries its own default tolerance and band weights; ``max_cost``
-        and ``band_weights`` in ``recipe`` override them.
+    space : "auto" | "ndvi_L" | "lab_w" | "lab" | "raw"
+        Feature space of the growing. "auto" (default) is "ndvi_L" -- 100 * NDVI and
+        CIELAB L -- when the raster has a NIR band, else "lab_w", the CIELAB recipe
+        with a* weighted 2.5 that shipped before 0.4.0. Each space carries the
+        tolerance and band weights it was benchmarked at (SPACES / SPACES_REACH);
+        ``max_cost`` and ``band_weights`` in ``recipe`` override them.
+    rule : "reach" | "partition"
+        How a pixel is assigned. "reach" (default): pygeosnag's kernel, a pixel goes
+        to the seed within the radius and under the tolerance with the lowest path
+        cost. "partition": pygeoadaptels' single global IFT partition with every
+        seed, cut by tolerance and radius afterwards -- the behaviour before 0.4.0,
+        where a pixel won by a far seed and then cut never returned to the near one.
     recipe : max_cost, band_weights, max_radius, fill_holes, compactness,
         seed_window -- overrides of RECIPE, passed to grow_seeds.
 
@@ -206,10 +235,16 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         for part in rest.split("|"):
             if part.startswith("layername="):
                 points_layer = part[len("layername="):]
+    if rule not in ("partition", "reach"):
+        raise ValueError(f"unknown rule {rule!r}; choose partition or reach")
+    if space == "auto":
+        with rasterio.open(raster_path) as s0:
+            _, idx0 = resolve_mode(s0.count, mode, bands)
+        space = "ndvi_L" if ("nir" in idx0 and "red" in idx0) else "lab_w"
     if space not in SPACES:
-        raise ValueError(f"unknown space {space!r}; choose from {sorted(SPACES)}")
+        raise ValueError(f"unknown space {space!r}; choose auto or one of {sorted(SPACES)}")
     kw = dict(RECIPE)
-    kw.update(SPACES[space])
+    kw.update((SPACES_REACH if rule == "reach" else SPACES)[space])
     kw.update({k: v for k, v in recipe.items() if v is not None})
     kw["band_weights"] = list(kw["band_weights"]) if kw.get("band_weights") is not None else None
     if halo is None:
@@ -239,7 +274,7 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
     with_seeds = [c for c in cores if ((rr >= c[0]) & (rr < c[1]) & (cc >= c[2]) & (cc < c[3])).any()]
     report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, {len(xy)} points "
                 f"({int((~on_raster).sum())} off the raster), {len(with_seeds)} of {len(cores)} tiles hold points, "
-                f"halo {halo} px, space {space}, recipe {kw}")
+                f"halo {halo} px, space {space}, rule {rule}, recipe {kw}")
 
     dst_labels = None
     if labels_out:
@@ -255,7 +290,7 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
     n_pts = len(xy)
     counts = np.zeros(max(n_pts, 1), dtype=np.int64)
     parts = {}                                   # adaptel_id -> polygon geometries (GeoJSON dicts)
-    args = [(raster_path, core, halo, seeds_rc, index, m.lch_trio, kw, space) for core in with_seeds]
+    args = [(raster_path, core, halo, seeds_rc, index, m.lch_trio, kw, space, rule) for core in with_seeds]
 
     def consume(k, core, res):
         r0, r1, c0, c1 = core
