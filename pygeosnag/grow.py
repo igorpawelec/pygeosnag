@@ -160,9 +160,11 @@ def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe, space
     if rule == "reach":
         from .growkernel import grow_within_reach
         labels = grow_within_reach(lab, local, mask=(~valid).astype(np.uint8),
-                                   **{k: v for k, v in recipe.items() if k in ("max_cost", "band_weights", "max_radius", "fill_holes")})
+                                   **{k: v for k, v in recipe.items()
+                                      if k in ("max_cost", "band_weights", "max_radius", "fill_holes", "taper")})
     else:
-        labels = grow_seeds(lab, local, mask=(~valid).astype(np.uint8), quiet=True, **recipe)
+        labels = grow_seeds(lab, local, mask=(~valid).astype(np.uint8), quiet=True,
+                            **{k: v for k, v in recipe.items() if k != "taper"})
     is_core = ((seeds_rc[gid, 0] >= r0) & (seeds_rc[gid, 0] < r1) & (seeds_rc[gid, 1] >= c0) & (seeds_rc[gid, 1] < c1))
     to_global = np.where(is_core, gid, -1).astype(np.int32)
     lab_global = np.where(labels >= 0, to_global[np.clip(labels, 0, None)], -1).astype(np.int32)
@@ -220,7 +222,9 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         seed, cut by tolerance and radius afterwards -- the behaviour before 0.4.0,
         where a pixel won by a far seed and then cut never returned to the near one.
     recipe : max_cost, band_weights, max_radius, fill_holes, compactness,
-        seed_window -- overrides of RECIPE, passed to grow_seeds.
+        seed_window -- overrides of RECIPE, passed to grow_seeds; ``taper`` (rule
+        "reach" only) lowers the tolerance linearly from ``max_cost`` at the seed
+        to ``max_cost - taper`` at the radius (0 = flat, the 0.4.0 default).
 
     Returns
     -------

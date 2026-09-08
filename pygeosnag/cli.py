@@ -36,7 +36,7 @@ def _grow(a):
     weights = tuple(float(x) for x in a.band_weights.split(",")) if a.band_weights else None
     grow_crowns(a.raster, a.points, a.output, mode=a.mode, bands=bands, labels_out=a.labels,
                 max_cost=a.max_cost, band_weights=weights, max_radius=a.max_radius,
-                fill_holes=not a.no_fill_holes, tile=a.tile, workers=a.workers, space=a.space, rule=a.rule, quiet=a.quiet)
+                fill_holes=not a.no_fill_holes, tile=a.tile, workers=a.workers, space=a.space, rule=a.rule, taper=a.taper, quiet=a.quiet)
     return 0
 
 
@@ -114,6 +114,8 @@ def main(argv=None):
                    help="feature space of the growing: auto = ndvi_L (100*NDVI and L) with a NIR band, else lab_w (CIELAB, a* weighted)")
     g.add_argument("--rule", choices=["reach", "partition"], default="reach",
                    help="assignment rule: reach = only seeds within the radius and tolerance compete (default, pygeosnag kernel); partition = one global IFT partition cut afterwards (pygeoadaptels, the behaviour before 0.4.0)")
+    g.add_argument("--taper", type=float, default=None,
+                   help="rule reach: the tolerance falls linearly from --max-cost at the seed to --max-cost minus this at the radius (default 0)")
     g.add_argument("--tile", type=int, default=2048, help="tile side in px (row-band height on a striped GeoTIFF)")
     g.add_argument("--workers", type=int, default=1, help="tiles grown in parallel processes (default 1)")
     g.add_argument("--quiet", action="store_true")
