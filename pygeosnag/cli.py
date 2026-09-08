@@ -36,7 +36,7 @@ def _grow(a):
     weights = tuple(float(x) for x in a.band_weights.split(",")) if a.band_weights else None
     grow_crowns(a.raster, a.points, a.output, mode=a.mode, bands=bands, labels_out=a.labels,
                 max_cost=a.max_cost, band_weights=weights, max_radius=a.max_radius,
-                fill_holes=not a.no_fill_holes, tile=a.tile, workers=a.workers, quiet=a.quiet)
+                fill_holes=not a.no_fill_holes, tile=a.tile, workers=a.workers, space=a.space, quiet=a.quiet)
     return 0
 
 
@@ -110,6 +110,8 @@ def main(argv=None):
     g.add_argument("--band-weights", default=None, help="L,a,b weights (default 0.5,2.5,1.0)")
     g.add_argument("--max-radius", type=float, default=None, help="pixels from the seed (default 20)")
     g.add_argument("--no-fill-holes", action="store_true")
+    g.add_argument("--space", choices=["lab_w", "lab", "ndvi_L", "raw"], default="lab_w",
+                   help="feature space of the growing (default lab_w, the shipped recipe; ndvi_L grew the best crowns on the benchmark, needs NIR)")
     g.add_argument("--tile", type=int, default=2048, help="tile side in px (row-band height on a striped GeoTIFF)")
     g.add_argument("--workers", type=int, default=1, help="tiles grown in parallel processes (default 1)")
     g.add_argument("--quiet", action="store_true")

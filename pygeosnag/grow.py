@@ -36,6 +36,20 @@ from .modes import resolve_mode
 RECIPE = dict(max_cost=15.0, band_weights=(0.5, 2.5, 1.0), max_radius=20, fill_holes=True)
 TARGET_WINDOW_PX = 40_000_000       # a full-width row band is kept under this many pixels
 
+# Feature spaces the growing can run on, with the tolerance each was benchmarked at
+# (SDT_research2026/80_grow_bench, 2026-09-08: 8 verified sites, 1113 crowns, seeds = the
+# reference tops, competitors = the detector's points; tolerance chosen on Gizycko):
+#   lab_w   CIELAB of the RGB-like trio, a* weighted 2.5 -- the shipped recipe: IoU median 0.53
+#   lab     CIELAB unweighted, 30:                                              0.55
+#   ndvi_L  100 * NDVI and CIELAB L, 45 (needs a NIR band):                    0.62
+#   raw     the three bands as digital numbers, 70:                             0.43
+SPACES = {
+    "lab_w": dict(max_cost=15.0, band_weights=(0.5, 2.5, 1.0)),
+    "lab": dict(max_cost=30.0, band_weights=None),
+    "ndvi_L": dict(max_cost=45.0, band_weights=None),
+    "raw": dict(max_cost=70.0, band_weights=None),
+}
+
 
 def lab_raster(raster_path, out_path, mode=None, bands=None, quiet=False):
     """CIELAB of the mode's RGB-like trio (RGB, or NIR-R-G in the CIR mode) as a 3-band GeoTIFF.
@@ -60,17 +74,31 @@ def lab_raster(raster_path, out_path, mode=None, bands=None, quiet=False):
     return out_path
 
 
-def _lab_window(arr, nodata, index, lch_trio):
-    """CIELAB (3, h, w) float32 and the valid mask of one window of raw bands."""
+def _lab_window(arr, nodata, index, lch_trio, space="lab_w"):
+    """Feature stack (bands, h, w) float32 of one window of raw bands, and the valid mask.
+
+    lab_w / lab: CIELAB of the mode's RGB-like trio; ndvi_L: 100 * NDVI (needs the nir and
+    red roles) and L; raw: the trio's digital numbers."""
     import pygeopalette as gp
     if nodata is not None and np.isnan(nodata):
         valid = np.isfinite(arr).all(axis=0)
     else:
         valid = (arr != nodata).all(axis=0) & np.isfinite(arr).all(axis=0)
     trio = [np.clip(to_uint8(np.where(valid, arr[index[r]], 0.0)), 0, 255).astype(np.uint8) for r in lch_trio]
+    if space == "raw":
+        return np.stack([t.astype(np.float32) for t in trio]), valid
     comps, _ = gp.convertbands(trio[0], trio[1], trio[2], "lab")
     lab = np.stack([np.asarray(c, np.float32) for c in comps])
-    return lab, valid
+    if space in ("lab_w", "lab"):
+        return lab, valid
+    if space == "ndvi_L":
+        if "nir" not in index or "red" not in index:
+            raise ValueError("space ndvi_L needs a NIR band (mode rgbn or cir); this raster has none")
+        nir = np.clip(to_uint8(np.where(valid, arr[index["nir"]], 0.0)), 0, 255).astype(np.float32)
+        red = np.clip(to_uint8(np.where(valid, arr[index["red"]], 0.0)), 0, 255).astype(np.float32)
+        ndvi = (nir - red) / np.maximum(nir + red, 1e-6)
+        return np.stack([100.0 * ndvi, lab[0]]), valid
+    raise ValueError(f"unknown space {space!r}; choose from {sorted(SPACES)}")
 
 
 def _tiles(height, width, striped, tile):
@@ -86,7 +114,7 @@ def _tiles(height, width, striped, tile):
     return out
 
 
-def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe):
+def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe, space="lab_w"):
     """Grow one tile: read core + halo, CIELAB, grow_seeds with every point in the
     window, keep the crowns of the core's points. Returns (core labels with GLOBAL
     point ids, -1 unassigned; core transform; pixel counts per id; points in core)
@@ -104,7 +132,7 @@ def _grow_tile(raster_path, core, halo, seeds_rc, index, lch_trio, recipe):
         core_transform = src.window_transform(Window(c0, r0, c1 - c0, r1 - r0))
     inside = ((seeds_rc[:, 0] >= wr0) & (seeds_rc[:, 0] < wr1) & (seeds_rc[:, 1] >= wc0) & (seeds_rc[:, 1] < wc1))
     gid = np.flatnonzero(inside)
-    lab, valid = _lab_window(arr, nodata, index, lch_trio)
+    lab, valid = _lab_window(arr, nodata, index, lch_trio, space)
     del arr
     local = np.column_stack([seeds_rc[gid, 0] - wr0, seeds_rc[gid, 1] - wc0]).astype(np.int64)
     ok = valid[local[:, 0], local[:, 1]]          # a point on nodata grows nothing
@@ -129,7 +157,8 @@ def _grow_tile_star(a):
 
 
 def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, labels_out=None,
-                points_layer=None, tile=2048, halo=None, workers=1, progress=None, quiet=False, **recipe):
+                points_layer=None, tile=2048, halo=None, workers=1, progress=None, quiet=False, space="lab_w",
+                **recipe):
     """Grow a point layer of dead trees into crown polygons, tile by tile.
 
     Parameters
@@ -155,6 +184,12 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         no interpreter to spawn).
     progress : callable(fraction, message) -> bool, optional
         Called after every tile; False cancels (RuntimeError "cancelled").
+    space : "lab_w" | "lab" | "ndvi_L" | "raw"
+        Feature space of the growing (SPACES): the shipped recipe is CIELAB with a*
+        weighted 2.5; "ndvi_L" (100 * NDVI and L, tolerance 45) grew the best crowns
+        on the 8-site benchmark (IoU median 0.62 against 0.53) and needs a NIR band.
+        Each space carries its own default tolerance and band weights; ``max_cost``
+        and ``band_weights`` in ``recipe`` override them.
     recipe : max_cost, band_weights, max_radius, fill_holes, compactness,
         seed_window -- overrides of RECIPE, passed to grow_seeds.
 
@@ -171,9 +206,12 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         for part in rest.split("|"):
             if part.startswith("layername="):
                 points_layer = part[len("layername="):]
+    if space not in SPACES:
+        raise ValueError(f"unknown space {space!r}; choose from {sorted(SPACES)}")
     kw = dict(RECIPE)
+    kw.update(SPACES[space])
     kw.update({k: v for k, v in recipe.items() if v is not None})
-    kw["band_weights"] = list(kw["band_weights"])
+    kw["band_weights"] = list(kw["band_weights"]) if kw.get("band_weights") is not None else None
     if halo is None:
         halo = int(np.ceil(2 * (kw.get("max_radius") or 20)))
     halo = max(int(halo), 8)
@@ -201,7 +239,7 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
     with_seeds = [c for c in cores if ((rr >= c[0]) & (rr < c[1]) & (cc >= c[2]) & (cc < c[3])).any()]
     report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, {len(xy)} points "
                 f"({int((~on_raster).sum())} off the raster), {len(with_seeds)} of {len(cores)} tiles hold points, "
-                f"halo {halo} px, recipe {kw}")
+                f"halo {halo} px, space {space}, recipe {kw}")
 
     dst_labels = None
     if labels_out:
@@ -217,7 +255,7 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
     n_pts = len(xy)
     counts = np.zeros(max(n_pts, 1), dtype=np.int64)
     parts = {}                                   # adaptel_id -> polygon geometries (GeoJSON dicts)
-    args = [(raster_path, core, halo, seeds_rc, index, m.lch_trio, kw) for core in with_seeds]
+    args = [(raster_path, core, halo, seeds_rc, index, m.lch_trio, kw, space) for core in with_seeds]
 
     def consume(k, core, res):
         r0, r1, c0, c1 = core

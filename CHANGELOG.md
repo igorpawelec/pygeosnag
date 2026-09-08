@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.5 — a feature space for the growing, benchmarked
+
+- `grow_crowns(space=...)` and `geosnag grow --space`: `lab_w` (the shipped
+  recipe, CIELAB with a* weighted 2.5, tolerance 15), `lab` (unweighted,
+  30), `ndvi_L` (100 * NDVI and L, 45; needs a NIR band), `raw` (digital
+  numbers, 70). Benchmarked on 8 verified sites (1200 crowns with their
+  tops) and Gizycko (6460 crowns), seeds = the reference tops, competitors
+  = the detector's points, tolerance chosen on Gizycko, scored on the 8
+  sites: median IoU 0.62 for `ndvi_L` against 0.53 for the shipped recipe,
+  at the same over-segmentation (~0) and less under-segmentation (0.31
+  against 0.38); unweighted CIELAB 0.55; the a* weighting hurts. The
+  default stays `lab_w`. What no space fixes: in dense dead-tree clusters
+  (Gizycko, IoU <= 0.49 for every space) a pixel won by a farther seed and
+  then cut by the radius never returns to the near one -- a property of
+  the single global IFT partition, not of the features. Report:
+  SDT_research2026/80_grow_bench/RAPORT_GROW_BENCH.md.
+
 ## 0.3.4 — crowns grown tile by tile
 
 - `grow_crowns` no longer reads the raster whole nor writes a CIELAB copy
