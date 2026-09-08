@@ -17,6 +17,7 @@ import urllib.request
 RELEASE = "assets-v2"
 URL = f"https://github.com/igorpawelec/pygeosnag/releases/download/{RELEASE}/{{name}}"
 KEYS = {"rgbn": "segments_rgbn", "cir": "segments_cir", "rgb": "segments_rgb", "objects": "objects_rgbn"}
+# object forests are keyed per band mode in the manifest: objects_rgbn, objects_rgb, objects_cir
 
 
 def assets_dir():

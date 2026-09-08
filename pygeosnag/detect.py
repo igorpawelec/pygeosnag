@@ -232,7 +232,9 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         never evidence about the crown; the LP method of Onoszko et al.
         uses a stricter 10 m gate on the value under the pixel.
     object_stage, object_threshold : score the object with the object
-        forest (rgbn only) into p_object; drop below object_threshold if set.
+        forest of the band mode into p_object (p_object stays empty for a mode
+        the release ships no object forest for -- assets-v2: rgbn only); drop
+        below object_threshold if set.
     prob_raster : str, optional
         Also write the per-pixel adaptel probability as a GeoTIFF.
     edge_px : int
@@ -289,7 +291,14 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         else:
             forest = assets.load_forest(m.name, quiet)
             model_id = f"{assets.RELEASE}/{m.name}"
-        object_forest = assets.load_forest("objects", quiet) if (object_stage and m.name == "rgbn") else None
+        # the object forest of this band mode, when the release ships one (assets-v2: rgbn only)
+        object_forest = None
+        if object_stage:
+            try:
+                if f"objects_{m.name}" in assets.manifest(quiet)["files"]:
+                    object_forest = assets.load_forest(f"objects_{m.name}", quiet)
+            except (OSError, RuntimeError, KeyError):
+                object_forest = None
         if threshold is None:
             threshold = 0.5 if model else assets.operating_threshold(default=0.5, quiet=quiet)
         mask_geom = load_stands(stands, stand_layer, min_age=stand_age, buffer_m=stand_buffer,
