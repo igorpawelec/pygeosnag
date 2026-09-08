@@ -19,6 +19,13 @@ the scene is off: a dark end more than 15 DN above the reference (haze)
 or a range narrower than 0.7 of the reference; ``"match"`` always;
 ``"off"`` never. The percentiles come from the same sampled tiles the
 scene normalisation uses, valid pixels only.
+
+It is a rescue, not a default. On the 200-scene batch of 2026-09-07 the
+"auto" trigger fired on 44 scenes: 27 went from nothing to hundreds of
+points, 17 lost nearly everything (one from 27 000 points to 159). Mapping
+the bands separately changes the ratios between them -- NDVI, NDGR, NDBR
+-- and the forests stand on those. A scene the default run handles is
+left alone; the mapping is for the scene where it finds nothing.
 """
 import numpy as np
 

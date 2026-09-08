@@ -218,7 +218,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
            keep_outside=False, chm=None, dtm=None, dsm=None, min_height=3.0, height_radius=3.0,
            keep_low=False, object_stage=True, object_threshold=None, prob_raster=None,
            edge_px=8, tile=2400, overlap=200, model=None, adaptel_threshold=None,
-           scene_norm="auto", norm_tiles=16, radiometry="auto", progress=None, quiet=False):
+           scene_norm="auto", norm_tiles=16, radiometry="off", progress=None, quiet=False):
     """Detect dead trees on a raster and write one point per tree.
 
     Parameters
@@ -279,13 +279,18 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
     norm_tiles : int
         How many tiles feed the scene statistics (16 -- a 2400 px tile is
         600 m, so 16 tiles is 5.8 km2 of adaptels).
-    radiometry : "auto" | "match" | "off" | radiometry.Radiometry
+    radiometry : "off" | "auto" | "match" | radiometry.Radiometry
         Per-band linear mapping of the scene's 2-98 percentiles onto the
         training orthophotos' (radiometry.REFERENCE), measured on the same
-        sampled tiles. "auto" applies it only to a scene that is off --
-        hazy (dark end more than 15 DN above the reference) or flat (range
-        below 0.7 of the reference); "match" always; "off" never. The
-        first log lines say what was measured and whether it was applied.
+        sampled tiles. A rescue for a scene where the default run finds
+        almost nothing, not a default: measured on 200 scenes, 44 met the
+        "auto" trigger (hazy: dark end more than 15 DN above the reference;
+        flat: range below 0.7 of the reference), 27 of them went from
+        nothing to hundreds of points, 17 lost nearly everything -- mapping
+        the bands separately changes the band ratios the forests rely on.
+        "off" (default) never; "auto" when the trigger says so; "match"
+        always. Run "off" first; rerun with "auto" only when the result is
+        empty on a scene that plainly holds dead trees.
     progress : callable(fraction, message) -> bool, optional
         Called after every tile; False cancels (RuntimeError "cancelled").
     """

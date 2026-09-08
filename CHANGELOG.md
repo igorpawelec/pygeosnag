@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 — radiometry matching is off by default
+
+- Measured on the whole 200-scene batch: the "auto" trigger fired on 44
+  scenes, 27 went from nothing to hundreds of points, 17 lost nearly all
+  their points (0233111: 10 575 -> 0; 1117209: 27 097 -> 159), mostly RGB
+  scenes triggered by a modest dark-end offset in blue. Mapping the bands
+  separately changes NDVI, NDGR and NDBR, which the forests stand on. So
+  `detect(radiometry="off")` is the default and "auto" is documented as a
+  rescue for a scene that returned nothing; the CLI and the plugin follow.
+
 ## 0.3.2 — radiometry matching for hazy and flat scenes
 
 - `radiometry.Radiometry`: the scene's per-band 2-98 percentiles (from the
