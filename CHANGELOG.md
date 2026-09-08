@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.4 — crowns grown tile by tile
+
+- `grow_crowns` no longer reads the raster whole nor writes a CIELAB copy
+  to a temporary file: the raster is cut into tiles (row bands on a
+  striped GeoTIFF, squares on a tiled one), each tile that holds a point is
+  read with a halo of twice `max_radius`, converted to CIELAB in memory and
+  grown with every point in the window competing; only the crowns of the
+  tile's own points are kept. Memory is bounded by the window (a 40 Mpx
+  band peaks around 3 GB); a 796-megapixel CIR orthophoto with 11 804
+  points, which killed the previous version at the temp drive, runs
+  through. `tile`, `halo`, `workers` (parallel processes; keep 1 inside
+  QGIS) and `progress` are new arguments; `--tile` and `--workers` on the
+  CLI. Output is one MultiPolygon per point (`adaptel_id` = point index,
+  `area_m2`, `perimeter`, `n_parts`) in layer `crowns`; the label raster is
+  a tiled BigTIFF-safe GeoTIFF. Measured against the whole-window run on a
+  2400 px Hajnówka crop with 1496 points: same crown count, differences
+  only from IFT tie-breaking at crown boundaries (median 1.7 m² per
+  affected crown, total area within 3%, unchanged by a larger halo).
+- Depends on pygeoadaptels 0.10.4 for the hole filling that made whole-
+  raster runs take hours (36 s per 2400 px tile before, 0.3 s now).
+
 ## 0.3.3 — radiometry matching is off by default
 
 - Measured on the whole 200-scene batch: the "auto" trigger fired on 44
