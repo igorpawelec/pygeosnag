@@ -38,7 +38,7 @@ try:
 except Exception:
     # No installed metadata: a copy vendored inside the QGIS plugin, say.
     # Keep this in step with pyproject.toml, it is what such a copy reports.
-    __version__ = "0.4.2"
+    __version__ = "0.4.3"
 
 __author__ = "Igor Pawelec"
 

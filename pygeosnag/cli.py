@@ -2,7 +2,7 @@
 
     geosnag detect ortho.tif -o trees.gpkg [--mode rgbn|cir|rgb] [--bands red,green,blue,nir]
                    [--threshold 0.7] [--stands stands.gpkg] [--prob-raster p.tif] [--quiet]
-    geosnag grow   ortho.tif trees.gpkg -o crowns.gpkg [--mode ...] [--space auto] [--rule reach] [--max-cost N] [--max-radius 20]
+    geosnag grow   ortho.tif trees.gpkg -o crowns.gpkg [--mode ...] [--space auto] [--rule auto] [--max-cost N] [--max-radius 20]
     geosnag info
 
 Console output is plain ASCII on purpose: Windows consoles in code page
@@ -112,8 +112,8 @@ def main(argv=None):
     g.add_argument("--no-fill-holes", action="store_true")
     g.add_argument("--space", choices=["auto", "ndvi_L", "lab_w", "lab", "raw"], default="auto",
                    help="feature space of the growing: auto = ndvi_L (100*NDVI and L) with a NIR band, else lab_w (CIELAB, a* weighted)")
-    g.add_argument("--rule", choices=["reach", "partition"], default="reach",
-                   help="assignment rule: reach = only seeds within the radius and tolerance compete (default, pygeosnag kernel); partition = one global IFT partition cut afterwards (pygeoadaptels, the behaviour before 0.4.0)")
+    g.add_argument("--rule", choices=["auto", "reach", "partition"], default="auto",
+                   help="assignment rule: auto = reach on ndvi_L, partition on the CIELAB/raw spaces (default); reach = only seeds within the radius and tolerance compete (pygeosnag kernel); partition = one global IFT partition cut afterwards (pygeoadaptels, the behaviour before 0.4.0)")
     g.add_argument("--taper", type=float, default=None,
                    help="rule reach: the tolerance falls linearly from --max-cost at the seed to --max-cost minus this at the radius (default 0)")
     g.add_argument("--tile", type=int, default=2048, help="tile side in px (row-band height on a striped GeoTIFF)")

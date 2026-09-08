@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.3 — rule "auto": within-reach on NDVI + L, partition on CIELAB
+
+- 0.4.0 applied the within-reach kernel to the CIELAB fallback too, which
+  it was never benchmarked on (every crown reference is CIR). On an RGB
+  spruce plot (SNP_21, the plot the lab_w recipe was worked out on) it
+  grew a median crown of 37 m2 with 9% of crowns as full 20-px discs,
+  against 14 m2 and none for the partition of 0.3.5: without far seeds
+  absorbing the spill, every pixel within 15 of a seed on uniform dark
+  canopy is taken up to the radius. `rule="auto"` (default) is now
+  "reach" on ndvi_L and "partition" on lab_w, lab and raw, i.e. rasters
+  without NIR grow exactly as before 0.4.0. An RGB benchmark is the way to
+  a better RGB recipe; until then the CIELAB spaces keep the old rule.
+
 ## 0.4.2 — grow_crowns reads the band order like detect
 
 - Bug: `grow_crowns` with `mode=None` took a 3-band CIR raster (NIR, R, G)

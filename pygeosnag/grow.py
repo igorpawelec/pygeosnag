@@ -69,7 +69,7 @@ SPACES_REACH = {
 # tolerance 20 of 0.4.0 and 0.53 (54%, 0.00, 0.38) for the CIELAB partition before 0.4.0; on
 # the 2027 Gizycko crowns 0.56 against 0.48 and 0.34.
 DEFAULT_SPACE = "auto"
-DEFAULT_RULE = "reach"
+DEFAULT_RULE = "auto"      # reach on ndvi_L, partition on lab_w (0.4.3)
 
 
 def lab_raster(raster_path, out_path, mode=None, bands=None, quiet=False):
@@ -219,8 +219,9 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         (flat tolerance 15) that shipped before 0.4.0. Each space carries the
         tolerance and band weights it was benchmarked at (SPACES / SPACES_REACH);
         ``max_cost`` and ``band_weights`` in ``recipe`` override them.
-    rule : "reach" | "partition"
-        How a pixel is assigned. "reach" (default): pygeosnag's kernel, a pixel goes
+    rule : "auto" | "reach" | "partition"
+        How a pixel is assigned. "auto" (default): "reach" on ndvi_L, "partition" on
+        the CIELAB and raw spaces (the pairing each was benchmarked in). "reach": pygeosnag's kernel, a pixel goes
         to the seed within the radius and under the tolerance with the lowest path
         cost. "partition": pygeoadaptels' single global IFT partition with every
         seed, cut by tolerance and radius afterwards -- the behaviour before 0.4.0,
@@ -243,8 +244,8 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         for part in rest.split("|"):
             if part.startswith("layername="):
                 points_layer = part[len("layername="):]
-    if rule not in ("partition", "reach"):
-        raise ValueError(f"unknown rule {rule!r}; choose partition or reach")
+    if rule not in ("auto", "partition", "reach"):
+        raise ValueError(f"unknown rule {rule!r}; choose auto, partition or reach")
     with rasterio.open(raster_path) as s0:
         mode, bands, mode_note = auto_mode(s0, mode, bands)      # same sniff as detect (0.4.2)
         _, idx0 = resolve_mode(s0.count, mode, bands)
@@ -252,6 +253,13 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         space = "ndvi_L" if ("nir" in idx0 and "red" in idx0) else "lab_w"
     if space not in SPACES:
         raise ValueError(f"unknown space {space!r}; choose auto or one of {sorted(SPACES)}")
+    if rule == "auto":
+        # The within-reach kernel was benchmarked on ndvi_L only. On weighted CIELAB it
+        # over-grows dark RGB scenes: on SNP_21 (the spruce plot the lab_w recipe was worked
+        # out on) reach/15 gave a median crown of 37 m2 with 9% full 20-px discs against
+        # 14 m2 and none for the partition, because without far seeds absorbing the spill
+        # every pixel within 15 of a seed on uniform dark canopy is taken up to the radius.
+        rule = "reach" if space == "ndvi_L" else "partition"
     kw = dict(RECIPE)
     kw.update((SPACES_REACH if rule == "reach" else SPACES)[space])
     kw.update({k: v for k, v in recipe.items() if v is not None})
