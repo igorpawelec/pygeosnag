@@ -46,3 +46,14 @@ def test_band_weights_and_tolerance_act_on_the_seed_distance():
     lab_w2 = grow_within_reach(img, np.array([[10, 2]]), max_cost=10.0, band_weights=[1.0, 2.0], max_radius=30, fill_holes=False)
     assert (lab_w1[:, 10:] == 0).all()         # 8 < 10: crossed
     assert (lab_w2[:, 10:] == -1).all()        # 16 > 10: stopped
+
+
+def test_taper_lowers_the_tolerance_with_the_distance_from_the_seed():
+    img = np.full((60, 60), 100.0, np.float32)   # flat field: every pixel is at cost 0
+    # tolerance 5 at the seed, 5 - 10 * d / 10 at distance d: negative beyond 5 px
+    lab = grow_within_reach(img, np.array([[30, 30]]), max_cost=5.0, max_radius=10, fill_holes=False, taper=10.0)
+    yy, xx = np.mgrid[0:60, 0:60]
+    d = np.hypot(yy - 30, xx - 30)
+    assert (lab[d <= 5] == 0).all() and (lab[d > 5.01] == -1).all()
+    lab0 = grow_within_reach(img, np.array([[30, 30]]), max_cost=5.0, max_radius=10, fill_holes=False)
+    assert (lab0[d <= 10] == 0).all()             # without taper the radius is the only cap

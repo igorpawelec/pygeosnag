@@ -60,9 +60,11 @@ def _pop(h_cost, h_pix, h_seed, size):
 
 
 @njit(cache=True)
-def ift_within_reach(feat, valid, seed_r, seed_c, weights, max_cost, max_radius):
+def ift_within_reach(feat, valid, seed_r, seed_c, weights, max_cost, max_radius, taper=0.0):
     """feat (bands, H, W) float32; valid (H, W) uint8 1 = usable; seeds as row/col
-    arrays; weights per band. Returns labels (H, W) int32, -1 unassigned."""
+    arrays; weights per band; taper >= 0 lowers the tolerance linearly with the
+    distance from the seed, from max_cost at the seed to max_cost - taper at the
+    radius. Returns labels (H, W) int32, -1 unassigned."""
     nb, H, W = feat.shape
     n = H * W
     labels = np.full(n, -1, np.int32)
@@ -101,15 +103,17 @@ def ift_within_reach(feat, valid, seed_r, seed_c, weights, max_cost, max_radius)
                 continue
             dr = nr - sr
             dc = nc - sc
-            if dr * dr + dc * dc > r2:
+            dist2 = dr * dr + dc * dc
+            if dist2 > r2:
                 continue
+            lim = max_cost - taper * np.sqrt(dist2) / max_radius
             d2 = 0.0
             for b in range(nb):
                 diff = (feat[b, nr, nc] - feat[b, sr, sc]) * weights[b]
                 d2 += diff * diff
             d = np.sqrt(d2)
             nd = cost if cost > d else d
-            if nd > max_cost:
+            if nd > lim:
                 continue
             if nd < best[q]:
                 best[q] = nd
@@ -130,9 +134,12 @@ _NB_R = np.array([d[0] for d in _NB], np.int64)
 _NB_C = np.array([d[1] for d in _NB], np.int64)
 
 
-def grow_within_reach(data, seeds, mask=None, max_cost=15.0, band_weights=None, max_radius=20, fill_holes=True):
+def grow_within_reach(data, seeds, mask=None, max_cost=15.0, band_weights=None, max_radius=20, fill_holes=True,
+                      taper=0.0):
     """Same contract as pygeoadaptels.grow.grow_seeds (data (bands, rows, cols) or (rows, cols),
-    seeds (n, 2) row/col, mask nonzero = nodata) with the within-reach rule."""
+    seeds (n, 2) row/col, mask nonzero = nodata) with the within-reach rule. `taper`
+    (experimental) lowers the tolerance linearly from max_cost at the seed to
+    max_cost - taper at max_radius."""
     data = np.asarray(data, np.float32)
     if data.ndim == 2:
         data = data[None]
@@ -145,7 +152,7 @@ def grow_within_reach(data, seeds, mask=None, max_cost=15.0, band_weights=None, 
     if w.shape != (nb,):
         raise ValueError(f"band_weights must have {nb} entries")
     labels = ift_within_reach(np.ascontiguousarray(data), valid.astype(np.uint8), seeds[:, 0].astype(np.int64),
-                              seeds[:, 1].astype(np.int64), w, float(max_cost), float(max_radius))
+                              seeds[:, 1].astype(np.int64), w, float(max_cost), float(max_radius), float(taper))
     if fill_holes:
         from pygeoadaptels.grow import _fill_holes
         labels = _fill_holes(labels, (~valid).astype(np.uint8))
