@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1 — the tolerance tapers with the distance from the seed
+
+- `growkernel.grow_within_reach(..., taper=)`: the tolerance is `max_cost`
+  at the seed and `max_cost - taper` at `max_radius`, linear in between;
+  `grow_crowns(taper=)` and `--taper` pass it through (rule "reach" only).
+- The default ndvi_L recipe becomes 28 at the seed, 12 at the radius
+  (`SPACES_REACH["ndvi_L"] = max_cost 28, taper 16`). Why: a flat tolerance
+  cannot serve both dense clusters (their bleached crowns want 25-30 near
+  the seed) and sparse stands (anything above 15 at the radius spills into
+  shadow and bare ground). Benchmarked on 14 tolerance pairs
+  (80_grow_bench --rule taper): 8 sites median IoU 0.698, 79% above 0.5,
+  OS 0.07, US 0.13 (0.4.0: 0.652, 72%, 0.03, 0.22); Gizycko 0.562, 63%
+  (0.4.0: 0.478, 45%); no site loses more than 0.01. Hajnowka against ALS
+  crowns: 0.29 against 0.29 (0.4.0) and 0.24 (0.3.x).
+
 ## 0.4.0 — a new default crown recipe: within-reach growing on NDVI + L
 
 - Default `grow_crowns(space="auto", rule="reach")`: the feature space is

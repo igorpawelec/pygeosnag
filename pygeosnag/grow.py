@@ -58,13 +58,16 @@ SPACES = {
 SPACES_REACH = {
     "lab_w": dict(max_cost=15.0, band_weights=(0.5, 2.5, 1.0)),
     "lab": dict(max_cost=20.0, band_weights=None),
-    "ndvi_L": dict(max_cost=20.0, band_weights=None),
+    "ndvi_L": dict(max_cost=28.0, band_weights=None, taper=16.0),   # 28 at the seed, 12 at the radius
     "raw": dict(max_cost=35.0, band_weights=None),        # not benchmarked under this rule
 }
-# The default since 0.4.0: rule "reach" on "ndvi_L" (tolerance 20), "lab_w" when the raster
-# has no NIR band. On the 8-site validation (1113 verified crowns) it grew crowns at a median
-# IoU of 0.65 (72% above 0.5, over-segmentation 0.03, under-segmentation 0.22) against 0.53
-# (54%, 0.00, 0.38) for the previous recipe; on the 2027 Gizycko crowns 0.48 against 0.34.
+# The default since 0.4.0: rule "reach" on "ndvi_L", "lab_w" when the raster has no NIR band.
+# 0.4.1 tapers the ndvi_L tolerance with the distance from the seed (28 at the seed, 12 at the
+# radius): dense clusters gain at the seed, the spill into shadow on sparse sites happens far
+# from it. On the 8-site validation (1113 verified crowns): median IoU 0.70 (79% above 0.5,
+# over-segmentation 0.07, under-segmentation 0.13) against 0.65 (72%, 0.03, 0.22) for the flat
+# tolerance 20 of 0.4.0 and 0.53 (54%, 0.00, 0.38) for the CIELAB partition before 0.4.0; on
+# the 2027 Gizycko crowns 0.56 against 0.48 and 0.34.
 DEFAULT_SPACE = "auto"
 DEFAULT_RULE = "reach"
 
@@ -211,8 +214,9 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
         Called after every tile; False cancels (RuntimeError "cancelled").
     space : "auto" | "ndvi_L" | "lab_w" | "lab" | "raw"
         Feature space of the growing. "auto" (default) is "ndvi_L" -- 100 * NDVI and
-        CIELAB L -- when the raster has a NIR band, else "lab_w", the CIELAB recipe
-        with a* weighted 2.5 that shipped before 0.4.0. Each space carries the
+        CIELAB L, tolerance 28 at the seed falling to 12 at the radius -- when the
+        raster has a NIR band, else "lab_w", the CIELAB recipe with a* weighted 2.5
+        (flat tolerance 15) that shipped before 0.4.0. Each space carries the
         tolerance and band weights it was benchmarked at (SPACES / SPACES_REACH);
         ``max_cost`` and ``band_weights`` in ``recipe`` override them.
     rule : "reach" | "partition"
