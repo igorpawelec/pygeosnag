@@ -31,7 +31,7 @@ import time
 import numpy as np
 
 from .features import to_uint8
-from .modes import resolve_mode
+from .modes import auto_mode, resolve_mode
 
 RECIPE = dict(max_cost=15.0, band_weights=(0.5, 2.5, 1.0), max_radius=20, fill_holes=True)
 TARGET_WINDOW_PX = 40_000_000       # a full-width row band is kept under this many pixels
@@ -245,9 +245,10 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
                 points_layer = part[len("layername="):]
     if rule not in ("partition", "reach"):
         raise ValueError(f"unknown rule {rule!r}; choose partition or reach")
+    with rasterio.open(raster_path) as s0:
+        mode, bands, mode_note = auto_mode(s0, mode, bands)      # same sniff as detect (0.4.2)
+        _, idx0 = resolve_mode(s0.count, mode, bands)
     if space == "auto":
-        with rasterio.open(raster_path) as s0:
-            _, idx0 = resolve_mode(s0.count, mode, bands)
         space = "ndvi_L" if ("nir" in idx0 and "red" in idx0) else "lab_w"
     if space not in SPACES:
         raise ValueError(f"unknown space {space!r}; choose auto or one of {sorted(SPACES)}")
@@ -280,7 +281,7 @@ def grow_crowns(raster_path, points_path, out_polygons, mode=None, bands=None, l
     rr, cc = seeds_rc[on_raster, 0], seeds_rc[on_raster, 1]
     cores = _tiles(H, W, striped, tile)
     with_seeds = [c for c in cores if ((rr >= c[0]) & (rr < c[1]) & (cc >= c[2]) & (cc < c[3])).any()]
-    report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}, {len(xy)} points "
+    report(0.0, f"pygeosnag: {os.path.basename(raster_path)} {W} x {H} px, mode {m.name}{mode_note}, {len(xy)} points "
                 f"({int((~on_raster).sum())} off the raster), {len(with_seeds)} of {len(cores)} tiles hold points, "
                 f"halo {halo} px, space {space}, rule {rule}, recipe {kw}")
 

@@ -70,3 +70,18 @@ def test_two_blobs_grow_into_two_crowns_whole_or_tiled(tmp_path):
     with fiona.open(tiled) as f:
         props = f.schema["properties"]
         assert f.schema["geometry"] == "MultiPolygon" and {"adaptel_id", "area_m2", "perimeter", "n_parts"} <= set(props)
+
+
+def test_three_band_cir_is_sniffed_and_grown_on_ndvi(tmp_path, capsys):
+    raster, pts, _ = _scene(str(tmp_path))
+    cir = os.path.join(str(tmp_path), "cir.tif")
+    with rasterio.open(raster) as src:
+        arr = src.read()
+        prof = src.profile
+    prof.update(count=3)
+    with rasterio.open(cir, "w", **prof) as dst:
+        dst.write(np.stack([arr[3], arr[0], arr[1]]))         # NIR, R, G: band 2 (red) is the darkest
+    out = os.path.join(str(tmp_path), "cir_crowns.gpkg")
+    assert grow_crowns(cir, pts, out, quiet=False) == 2
+    report = capsys.readouterr().out
+    assert "mode cir (auto:" in report and "space ndvi_L" in report

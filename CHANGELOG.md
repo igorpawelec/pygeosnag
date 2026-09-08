@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 — grow_crowns reads the band order like detect
+
+- Bug: `grow_crowns` with `mode=None` took a 3-band CIR raster (NIR, R, G)
+  as RGB, so `space="auto"` fell back to weighted CIELAB on false colours
+  (seen on Ramsowo in the QGIS plugin, "mode rgb ... space lab_w"). The
+  band-order sniff of 0.3.1 lived in `detect` only. It now lives in
+  `modes.auto_mode` / `modes.sniff_bands` and both entry points use it;
+  the grow report line carries the same "(auto: ...)" note as detect.
+
 ## 0.4.1 — the tolerance tapers with the distance from the seed
 
 - `growkernel.grow_within_reach(..., taper=)`: the tolerance is `max_cost`

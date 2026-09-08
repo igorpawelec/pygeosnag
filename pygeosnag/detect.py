@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 from .features import GSD, MIN_PX, edges_of, feature_names, lch_of, segment_features, to_uint8
-from .modes import DEFAULT_ORDER, guess_band_order, resolve_mode
+from .modes import auto_mode, resolve_mode
 from .objects import build_objects, object_features, suppress
 from .segment import segment
 
@@ -120,31 +120,6 @@ def _open(raster_path, quiet):
         vrt = WarpedVRT(src, transform=new, width=W, height=H, resampling=Resampling.bilinear)
         return src, vrt
     return src, src
-
-
-def _sniff_bands(ds, grid=3, size=256):
-    """Per-band medians over `grid` x `grid` windows spread across the raster
-    (finite pixels only), or None when too little of it holds data."""
-    from rasterio.windows import Window
-    H, W = ds.height, ds.width
-    size = int(min(size, H, W))
-    parts = []
-    for i in range(1, grid + 1):
-        for j in range(1, grid + 1):
-            r0 = max(0, min(H - size, int(H * i / (grid + 1)) - size // 2))
-            c0 = max(0, min(W - size, int(W * j / (grid + 1)) - size // 2))
-            a = ds.read(window=Window(c0, r0, size, size)).astype(np.float64)
-            ok = np.isfinite(a).all(axis=0)
-            if ds.nodata is not None and not np.isnan(ds.nodata):
-                ok &= (a != ds.nodata).all(axis=0)
-            if ok.any():
-                parts.append(a[:, ok])
-    if not parts:
-        return None
-    pool = np.concatenate(parts, axis=1)
-    if pool.shape[1] < 1000:
-        return None
-    return np.median(pool, axis=1)
 
 
 def _height_sampler(chm, dtm, dsm, crs, radius_m=3.0):
@@ -305,15 +280,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         # A CIR orthophoto read as RGB finds almost nothing, and nothing in a
         # 3-band file says which it is -- except that vegetation absorbs red
         # and reflects near infrared.
-        mode_note = ""
-        if mode is None and bands is None and ds.count in (3, 4):
-            med = _sniff_bands(ds)
-            guess, g_bands, why = guess_band_order(med) if med is not None else (None, None, "no data sampled")
-            if guess is not None and g_bands != DEFAULT_ORDER[ds.count]:
-                mode, bands = guess, g_bands
-                mode_note = f" (auto: {why}; pass mode= or bands= if that is wrong)"
-            elif guess is None:
-                mode_note = f" (auto: {why}; kept the default)"
+        mode, bands, mode_note = auto_mode(ds, mode, bands)
         m, index = resolve_mode(ds.count, mode, bands)
         if model:
             import joblib
