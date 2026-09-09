@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 — models assets-v3: an object forest for RGB, an operating point per band mode
+
+- `assets.RELEASE = "assets-v3"`: the same three segment forests, feature
+  tables and RGB+NIR object forest as assets-v2 (byte-identical), plus
+  `objects_rgb`, the object forest of the RGB band mode (118 313 objects
+  from the eight sites' complete windows scored out-of-fold, 12 050
+  matched to a reference top). `detect` in rgb mode now fills `p_object`;
+  on Bialowieza (bpn 2018, no NIR) `p_object >= 0.3` lifts precision from
+  16% to 27% at 41% recall on the 2017 cohort (the threshold alone reaches
+  22% at 0.8), `>= 0.4` to 32% at 31%; on two dark spruce plots (SNP) it
+  separates nothing, so the cut stays optional and off by default.
+- `operating_point.per_mode` in the manifest and
+  `assets.operating_threshold(mode=)`: `detect(threshold=None)` takes the
+  band mode's own cut -- 0.7 for rgbn and cir as before, 0.6 for rgb, whose
+  forest scores lower (leave-one-site-out optimum 0.5, F1 on the SNP plots
+  peaks at 0.5-0.6, 0.7 cost 4 recall points on bpn for no precision).
+- `detect` loads `objects_<mode>` from the manifest for any mode that ships
+  one (0.4.3 had objects for rgbn only, hard-wired).
+- Grow crowns unchanged (rule auto, ndvi_L 28->12 with NIR, partition lab_w
+  15 without). Publish the assets-v3 release before shipping this version:
+  a fresh cache downloads from it.
+
 ## 0.4.3 — rule "auto": within-reach on NDVI + L, partition on CIELAB
 
 - 0.4.0 applied the within-reach kernel to the CIELAB fallback too, which

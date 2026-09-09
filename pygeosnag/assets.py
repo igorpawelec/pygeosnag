@@ -14,7 +14,7 @@ import json
 import os
 import urllib.request
 
-RELEASE = "assets-v2"
+RELEASE = "assets-v3"
 URL = f"https://github.com/igorpawelec/pygeosnag/releases/download/{RELEASE}/{{name}}"
 KEYS = {"rgbn": "segments_rgbn", "cir": "segments_cir", "rgb": "segments_rgb", "objects": "objects_rgbn"}
 # object forests are keyed per band mode in the manifest: objects_rgbn, objects_rgb, objects_cir
@@ -92,10 +92,15 @@ def manifest_entry(key, quiet=False):
     return m["files"].get(KEYS.get(key, key), {})
 
 
-def operating_threshold(default=0.5, quiet=False):
-    """The probability cut the shipped forests were calibrated at."""
+def operating_threshold(default=0.5, quiet=False, mode=None):
+    """The probability cut the shipped forests were calibrated at: the band mode's
+    own (``operating_point.per_mode``, assets-v3: rgb 0.6) when the manifest has
+    one, else the common ``operating_point.threshold``."""
     try:
-        return float(manifest(quiet)["operating_point"]["threshold"])
+        op = manifest(quiet)["operating_point"]
+        if mode and mode in (op.get("per_mode") or {}):
+            return float(op["per_mode"][mode])
+        return float(op["threshold"])
     except Exception:                        # noqa: BLE001 -- a missing manifest must not stop detect
         return default
 

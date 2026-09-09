@@ -233,7 +233,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         uses a stricter 10 m gate on the value under the pixel.
     object_stage, object_threshold : score the object with the object
         forest of the band mode into p_object (p_object stays empty for a mode
-        the release ships no object forest for -- assets-v2: rgbn only); drop
+        the release ships no object forest for -- assets-v3: rgbn and rgb); drop
         below object_threshold if set.
     prob_raster : str, optional
         Also write the per-pixel adaptel probability as a GeoTIFF.
@@ -300,7 +300,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
             except (OSError, RuntimeError, KeyError):
                 object_forest = None
         if threshold is None:
-            threshold = 0.5 if model else assets.operating_threshold(default=0.5, quiet=quiet)
+            threshold = 0.5 if model else assets.operating_threshold(default=0.5, quiet=quiet, mode=m.name)
         mask_geom = load_stands(stands, stand_layer, min_age=stand_age, buffer_m=stand_buffer,
                                 quiet=quiet) if stands else None
         height_at, height_srcs = _height_sampler(chm, dtm, dsm, ds.crs, height_radius)
