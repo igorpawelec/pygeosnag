@@ -59,7 +59,7 @@ Three things the detector does not do: it does not separate dead from dying tree
 
 ## How it works
 
-1. **Segmentation.** Adaptels at threshold 60 on the four bands, or at a threshold matched to the same granularity on three (RGB t40, CIR t50). Nodata is masked; adaptels smaller than 4 px are not scored.
+1. **Adaptels (superpixels).** Adaptels at threshold 60 on the four bands, or at a threshold matched to the same granularity on three (RGB t40, CIR t50). Nodata is masked; adaptels smaller than 4 px are not scored.
 2. **Features.** For NDVI, NDGR, NDBR, CIELCh lightness and chroma: mean, standard deviation and contrast to a 25 m box; hue as circular mean and variance; area; elongation. Without NIR there is no NDVI, without blue no NDBR; in the CIR mode the (NIR, R, G) triple goes through the RGB-to-CIELCh transform as if it were RGB.
 3. **Forest.** One per mode, 200 trees, balanced subsampling, trained on ~2 million adaptels from seven sites.
 4. **Threshold.** Absolute; the default is the operating point recorded in the models' manifest for the band mode (assets-v3: p >= 0.7 for RGB+NIR and CIR, 0.6 for RGB; 0.5 for assets-v1), the useful range 0.5–0.8. A per-scene quantile was tried and rejected: a scene without dead trees also has a top 1.5%.
@@ -71,9 +71,9 @@ Input at another pixel size is resampled to 0.25 m. 8-bit input is what the mode
 
 ## Citing
 
-The method and its evaluation are described in the research report of the *Baza martwych drzew* project; the underlying segmentation in:
+The adaptels and their use for standing dead trees are described in:
 
-> Pawelec, I., Hawryło, P., Netzel, P., & Socha, J. (2026). Standing dead tree detection from adaptel micro-segmentation of aerial orthophotos.
+> Pawelec, I., Hawryło, P., Netzel, P., & Socha, J. (2026). Evaluating superpixel algorithms for standing dead tree delineation using aerial orthoimagery. *International Journal of Applied Earth Observation and Geoinformation*, 147, 105180. https://doi.org/10.1016/j.jag.2026.105180
 
 See `CITATION.cff`.
 
