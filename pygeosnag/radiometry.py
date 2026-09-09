@@ -7,7 +7,7 @@ histogram shifted up and squeezed -- keeps its ranking of dark and bright
 crowns, but every contrast the forests learnt on (the CIELCh lightness
 and chroma, the spread and contrast features) comes out smaller, and the
 adaptel probabilities never reach the operating point. Measured on a
-Radom 2017 pine scene with red 56-123 and NIR 57-119 (reference 29-80 and
+hazy 2017 pine scene with red 56-123 and NIR 57-119 (reference 29-80 and
 50-144): the highest probability on a 600 m crop was 0.23; mapped onto the
 reference range, the same crop gave 11 points above 0.6 that sit on grey
 crowns. Scene normalisation (scenenorm.py) does not cover this: it
@@ -31,7 +31,7 @@ import numpy as np
 
 # median 2nd / 98th percentile per band over the nine training rasters
 # (krynki1, krynki2, gleboczek, niedzwiedzi, ocwieka, szczepanowo, kudypy,
-# mieszkowice, bpn; measured 2026-09-07 at 4 m on valid pixels)
+# mieszkowice and one independent test area; measured 2026-09-07 at 4 m on valid pixels)
 REFERENCE = {"red": (29.0, 80.0), "green": (45.0, 94.0), "blue": (55.0, 79.0), "nir": (50.0, 144.0)}
 OFFSET_DN = 15.0          # dark end this much above the reference -> haze
 RANGE_RATIO = 0.7         # range this much narrower than the reference -> flat

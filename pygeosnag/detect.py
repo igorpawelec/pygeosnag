@@ -260,7 +260,7 @@ def detect(raster_path, out_path, mode=None, bands=None, threshold=None, suppres
         Per-band linear mapping of the scene's 2-98 percentiles onto the
         training orthophotos' (radiometry.REFERENCE), measured on the same
         sampled tiles. A rescue for a scene where the default run finds
-        almost nothing, not a default: measured on 200 scenes, 44 met the
+        almost nothing, not a default: measured on a large set of scenes, about one in five met the
         "auto" trigger (hazy: dark end more than 15 DN above the reference;
         flat: range below 0.7 of the reference), 27 of them went from
         nothing to hundreds of points, 17 lost nearly everything -- mapping

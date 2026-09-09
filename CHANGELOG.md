@@ -5,7 +5,7 @@
 - Documentation and manifest only; the code of 0.5.0 is unchanged. The
   assets-v3 release now carries the assets-v1 RGB segment forest (labels of
   v1: the segment under a reference top) in place of the v2-label one, and
-  no `objects_rgb`. Measured on Bialowieza 2018 without NIR (never trained
+  no `objects_rgb`. Measured on an independent 2018 test area without NIR (never trained
   on): the v1 forest gives 30% precision at 60% recall on the 2017 cohort
   (24% at 64% at p >= 0.5), the v2-label forest 16% at 58% and, with scene
   normalisation, 12% at 57%; the v2 forest with its object cut reached 27%
@@ -22,7 +22,7 @@
   `objects_rgb`, the object forest of the RGB band mode (118 313 objects
   from the eight sites' complete windows scored out-of-fold, 12 050
   matched to a reference top). `detect` in rgb mode now fills `p_object`;
-  on Bialowieza (bpn 2018, no NIR) `p_object >= 0.3` lifts precision from
+  on an independent test area (2018 flight, no NIR) `p_object >= 0.3` lifts precision from
   16% to 27% at 41% recall on the 2017 cohort (the threshold alone reaches
   22% at 0.8), `>= 0.4` to 32% at 31%; on two dark spruce plots (SNP) it
   separates nothing, so the cut stays optional and off by default.
@@ -30,7 +30,7 @@
   `assets.operating_threshold(mode=)`: `detect(threshold=None)` takes the
   band mode's own cut -- 0.7 for rgbn and cir as before, 0.6 for rgb, whose
   forest scores lower (leave-one-site-out optimum 0.5, F1 on the SNP plots
-  peaks at 0.5-0.6, 0.7 cost 4 recall points on bpn for no precision).
+  peaks at 0.5-0.6, 0.7 cost 4 recall points on the test area for no precision).
 - `detect` loads `objects_<mode>` from the manifest for any mode that ships
   one (0.4.3 had objects for rgbn only, hard-wired).
 - Grow crowns unchanged (rule auto, ndvi_L 28->12 with NIR, partition lab_w
@@ -153,7 +153,7 @@
   it only when the scene is hazy (dark end > 15 DN above the reference) or
   flat (range < 0.7 of the reference); `"match"` always, `"off"` never;
   `--radiometry` on the CLI. Measured on the 200-AOI batch of 2026-09-07:
-  48 of 200 scenes trigger; on three that gave zero points a 600 m crop
+  about one in four scenes of a large set trigger; on three that gave zero points a 600 m crop
   went from a highest probability of 0.21-0.59 to 11-61 points above 0.6,
   on grey crowns. Scene normalisation could not do this: it standardises
   the five absolute means, not the pixel-level contrasts the other
@@ -207,7 +207,7 @@
   the manifest's `operating_point.threshold` is 0.7 for assets-v2 (0.5 for
   assets-v1), `assets.operating_threshold()` reads it, and `detect` /
   `geosnag detect --threshold` default to it (None = manifest). On Białowieża
-  (bpn, 2018 flight, 13 945 ALS-mapped dead crowns), v2 at 0.7 matches v1
+  (the test area, 2018 flight, 13 945 ALS-mapped dead crowns), v2 at 0.7 matches v1
   at 0.5 on the trees dead by the flight (recall 61%, precision floor 25-26%
   against an ALS reference that is not the image's reference), and the v2
   object forest now separates true from false objects on a scene it has
