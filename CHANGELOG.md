@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.1 — assets-v3 corrected: the RGB forest is the assets-v1 one again
+
+- Documentation and manifest only; the code of 0.5.0 is unchanged. The
+  assets-v3 release now carries the assets-v1 RGB segment forest (labels of
+  v1: the segment under a reference top) in place of the v2-label one, and
+  no `objects_rgb`. Measured on Bialowieza 2018 without NIR (never trained
+  on): the v1 forest gives 30% precision at 60% recall on the 2017 cohort
+  (24% at 64% at p >= 0.5), the v2-label forest 16% at 58% and, with scene
+  normalisation, 12% at 57%; the v2 forest with its object cut reached 27%
+  only at 41% recall. The whole-crown labels of v2 cost precision that
+  scene normalisation repaired for rgbn and cir but not for rgb. The rgb
+  operating point stays 0.6. `p_object` is empty in rgb mode again; the
+  per-mode object-forest loader stays for a future `objects_rgb` trained on
+  the v1 forest's scores.
+
 ## 0.5.0 — models assets-v3: an object forest for RGB, an operating point per band mode
 
 - `assets.RELEASE = "assets-v3"`: the same three segment forests, feature
