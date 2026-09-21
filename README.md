@@ -2,6 +2,8 @@
 
 <img src="https://raw.githubusercontent.com/igorpawelec/pygeosnag/main/www/pygeosnag.png" align="right" width="200"/>
 
+[![tests](https://github.com/igorpawelec/pygeosnag/actions/workflows/tests.yml/badge.svg)](https://github.com/igorpawelec/pygeosnag/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/igorpawelec/pygeosnag?filter=v*)](https://github.com/igorpawelec/pygeosnag/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 **Standing dead trees on aerial orthophotos, as points — and the crowns grown from them.**
