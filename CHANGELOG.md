@@ -221,7 +221,7 @@
 - `detect_array(..., scene_norm=)` and `tile_features()` for callers that
   drive the pipeline window by window.
 
-## 0.2.1 (unreleased)
+## 0.2.1 — height gate from a canopy height model or a DSM/DTM pair
 
 - The height gate works again on rasterio 1.4 and newer. `Dataset.index`
   now coerces its result with `int()`, which raises `TypeError` on the
